@@ -53,14 +53,19 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const [activeColor, setActiveColor] = useState<string>('#0B5FFF');
   const [zoom, setZoom] = useState<number>(100);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
   
   // Elementos da prancheta
   const [elements, setElements] = useState<TacticalElement[]>([]);
   const [history, setHistory] = useState<TacticalElement[][]>([]);
   
-  // Estados de Desenho
+  // Estados de Desenho e Referências do Viewport / Mapa
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<{ x: number; y: number }[]>([]);
   const [dragStartPoint, setDragStartPoint] = useState<{ x: number; y: number } | null>(null);
@@ -80,6 +85,12 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   const [stratTitle, setStratTitle] = useState('');
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
+  // Resetar zoom e centralizar o mapa
+  const handleResetZoom = () => {
+    setZoom(100);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
   // Sincronizar pokémons com a API do unite-db
   useEffect(() => {
     fetchUniteDbPokemons().then(data => {
@@ -87,6 +98,75 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
         setPokemons(data);
       }
     });
+  }, []);
+
+  // Atalhos de Teclado (Segurar Espaço para Modo Navegação Mão) e Soltura Global de Mouse
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+        setIsPanning(false);
+      }
+    };
+
+    const handleGlobalMouseUp = () => {
+      setIsPanning(false);
+      setDraggedTokenId(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, []);
+
+  // Zoom Inteligente com Scroll do Mouse direcionado para a posição do cursor
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+
+      const delta = -e.deltaY;
+      const zoomFactor = delta > 0 ? 1.14 : 0.88;
+
+      setZoom(prevZoom => {
+        const nextZoom = Math.min(300, Math.max(50, Math.round(prevZoom * zoomFactor)));
+        if (nextZoom === prevZoom) return prevZoom;
+
+        const rect = viewport.getBoundingClientRect();
+        const mouseX = e.clientX - (rect.left + rect.width / 2);
+        const mouseY = e.clientY - (rect.top + rect.height / 2);
+
+        const scaleRatio = nextZoom / prevZoom;
+        setPanOffset(prevPan => ({
+          x: mouseX - (mouseX - prevPan.x) * scaleRatio,
+          y: mouseY - (mouseY - prevPan.y) * scaleRatio
+        }));
+
+        return nextZoom;
+      });
+    };
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      viewport.removeEventListener('wheel', handleWheel);
+    };
   }, []);
 
   // Cores de degradê unificadas por classe para os cards do catálogo lateral
@@ -186,6 +266,10 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
 
   // Mover Token existente no mapa
   const handleTokenMouseDown = (e: React.MouseEvent, elId: string) => {
+    if (e.button === 1 || isSpacePressed || activeTool === 'pan') {
+      return;
+    }
+
     if (activeTool === 'eraser') {
       pushHistory();
       setElements(prev => prev.filter(el => el.id !== elId));
@@ -359,8 +443,30 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     ctx.restore();
   };
 
+  // Iniciar Pan pelo Viewport
+  const handleViewportMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1 || isSpacePressed || activeTool === 'pan' || e.target === viewportRef.current) {
+      e.preventDefault();
+      setIsPanning(true);
+      setPanStart({
+        x: e.clientX - panOffset.x,
+        y: e.clientY - panOffset.y
+      });
+    }
+  };
+
   // Eventos de Mouse no Canvas / Mapa
   const handleMapMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1 || isSpacePressed || activeTool === 'pan') {
+      e.preventDefault();
+      setIsPanning(true);
+      setPanStart({
+        x: e.clientX - panOffset.x,
+        y: e.clientY - panOffset.y
+      });
+      return;
+    }
+
     const mapRect = mapContainerRef.current?.getBoundingClientRect();
     if (!mapRect) return;
 
@@ -385,6 +491,14 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   };
 
   const handleMapMouseMove = (e: React.MouseEvent) => {
+    if (isPanning) {
+      setPanOffset({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y
+      });
+      return;
+    }
+
     const mapRect = mapContainerRef.current?.getBoundingClientRect();
     if (!mapRect) return;
 
@@ -425,6 +539,10 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   };
 
   const handleMapMouseUp = () => {
+    if (isPanning) {
+      setIsPanning(false);
+    }
+
     if (draggedTokenId) {
       pushHistory();
       setDraggedTokenId(null);
@@ -643,32 +761,49 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           <div className="zoom-controls-group">
             <button 
               className="zoom-btn" 
-              onClick={() => setZoom(prev => Math.max(70, prev - 10))}
+              onClick={() => setZoom(prev => Math.max(50, prev - 15))}
               title="Diminuir Zoom"
             >
               <ZoomOut size={14} />
             </button>
             <span 
               className="zoom-display" 
-              onClick={() => setZoom(100)} 
-              title="Clique para resetar para 100%"
+              onClick={handleResetZoom} 
+              title="Clique para resetar para 100% e centralizar"
             >
               {zoom}%
             </span>
             <button 
               className="zoom-btn" 
-              onClick={() => setZoom(prev => Math.min(150, prev + 10))}
+              onClick={() => setZoom(prev => Math.min(300, prev + 15))}
               title="Aumentar Zoom"
             >
               <ZoomIn size={14} />
             </button>
             <button 
               className="zoom-btn" 
-              onClick={() => setZoom(100)}
-              title="Ajustar à Tela"
+              onClick={handleResetZoom}
+              title="Ajustar e Centralizar Mapa"
             >
               <Maximize2 size={13} />
             </button>
+          </div>
+
+          {/* Atalhos Rápidos de Zoom */}
+          <div className="zoom-preset-list">
+            {[75, 100, 150, 200].map(p => (
+              <button
+                key={p}
+                className={`zoom-preset-badge ${zoom === p ? 'active' : ''}`}
+                onClick={() => {
+                  setZoom(p);
+                  if (p === 100) setPanOffset({ x: 0, y: 0 });
+                }}
+                title={`Definir zoom em ${p}%`}
+              >
+                {p}%
+              </button>
+            ))}
           </div>
 
           {/* Desfazer & Limpar */}
@@ -755,9 +890,9 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
             </button>
 
             <button 
-              className={`tool-icon-btn ${activeTool === 'pan' ? 'active' : ''}`}
+              className={`tool-icon-btn ${activeTool === 'pan' ? 'active pan-mode' : ''}`}
               onClick={() => setActiveTool('pan')}
-              title="Mão / Navegação"
+              title="Mão / Navegação (Clique e arraste para mover o mapa, ou segure Espaço)"
             >
               <Hand size={18} />
             </button>
@@ -786,14 +921,23 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
         </div>
 
         {/* ÁREA CENTRAL: O MAPA INTERATIVO + CANVAS */}
-        <div className="tactical-center-viewport">
+        <div 
+          ref={viewportRef}
+          className={`tactical-center-viewport ${isPanning ? 'panning' : ''} ${isSpacePressed || activeTool === 'pan' ? 'pan-active' : ''}`}
+          onMouseDown={handleViewportMouseDown}
+          onMouseMove={handleMapMouseMove}
+          onMouseUp={handleMapMouseUp}
+        >
           <div 
             className="map-scalable-wrapper"
-            style={{ transform: `scale(${zoom / 100})` }}
+            style={{ 
+              transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom / 100})`,
+              transition: isPanning ? 'none' : 'transform 0.15s ease-out'
+            }}
           >
             <div 
               ref={mapContainerRef}
-              className={`map-interactive-stage ${activeTool}`}
+              className={`map-interactive-stage ${activeTool} ${isPanning ? 'panning' : ''}`}
               onMouseDown={handleMapMouseDown}
               onMouseMove={handleMapMouseMove}
               onMouseUp={handleMapMouseUp}
@@ -889,6 +1033,42 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
               <div className="map-bottom-hint-banner">
                 <span>ARRASTE OU CLIQUE EM UM POKÉMON ABAIXO PARA ADICIONAR AO MAPA</span>
               </div>
+            </div>
+          </div>
+
+          {/* Mini HUD Flutuante de Zoom & Dicas de Navegação */}
+          <div className="map-zoom-hud">
+            <button 
+              className="zoom-hud-btn" 
+              onClick={() => setZoom(prev => Math.max(50, prev - 15))}
+              title="Diminuir Zoom"
+            >
+              <ZoomOut size={13} />
+            </button>
+            <button 
+              className="zoom-hud-badge" 
+              onClick={handleResetZoom}
+              title="Clique para resetar (100%) e centralizar"
+            >
+              {zoom}%
+            </button>
+            <button 
+              className="zoom-hud-btn" 
+              onClick={() => setZoom(prev => Math.min(300, prev + 15))}
+              title="Aumentar Zoom"
+            >
+              <ZoomIn size={13} />
+            </button>
+            <div className="zoom-hud-divider" />
+            <button 
+              className="zoom-hud-btn" 
+              onClick={handleResetZoom}
+              title="Ajustar Mapa à Tela (100%)"
+            >
+              <Maximize2 size={12} />
+            </button>
+            <div className="zoom-hud-hint">
+              <span>Scroll para zoom • Arraste com a Mão ou segure Espaço</span>
             </div>
           </div>
         </div>
@@ -1153,6 +1333,36 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           cursor: pointer;
         }
 
+        .zoom-preset-list {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .zoom-preset-badge {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.09);
+          border-radius: 6px;
+          color: #94A3B8;
+          font-size: 0.68rem;
+          font-weight: 700;
+          padding: 4px 7px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+
+        .zoom-preset-badge:hover {
+          background: rgba(255, 255, 255, 0.12);
+          color: #FFFFFF;
+        }
+
+        .zoom-preset-badge.active {
+          background: rgba(11, 95, 255, 0.25);
+          border-color: #38BDF8;
+          color: #38BDF8;
+          font-weight: 800;
+        }
+
         .action-btn-pill {
           display: flex;
           align-items: center;
@@ -1274,6 +1484,12 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           border-color: #FCA5A5;
         }
 
+        .tool-icon-btn.active.pan-mode {
+          background: #10B981;
+          border-color: #34D399;
+          box-shadow: 0 0 14px rgba(16, 185, 129, 0.6);
+        }
+
         .tools-color-palette {
           display: flex;
           flex-direction: column;
@@ -1310,8 +1526,8 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
 
         /* VIEWPORT CENTRAL COM MAPA */
         .tactical-center-viewport {
-          background: #050811;
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: radial-gradient(circle at 50% 50%, #0d1527 0%, #050811 100%);
+          border: 1px solid rgba(255, 255, 255, 0.09);
           border-radius: 12px;
           overflow: hidden;
           display: flex;
@@ -1319,6 +1535,101 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           justify-content: center;
           min-height: 560px;
           position: relative;
+          user-select: none;
+        }
+
+        .tactical-center-viewport.pan-active {
+          cursor: grab;
+        }
+
+        .tactical-center-viewport.panning,
+        .tactical-center-viewport.panning * {
+          cursor: grabbing !important;
+        }
+
+        /* MINI HUD FLUTUANTE DE ZOOM */
+        .map-zoom-hud {
+          position: absolute;
+          bottom: 14px;
+          right: 14px;
+          z-index: 40;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(10, 16, 32, 0.85);
+          backdrop-filter: blur(20px) saturate(180%);
+          -webkit-backdrop-filter: blur(20px) saturate(180%);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 30px;
+          padding: 4px 10px;
+          box-shadow: 
+            0 12px 32px rgba(0, 0, 0, 0.65),
+            inset 0 1px 1.5px rgba(255, 255, 255, 0.2);
+          pointer-events: auto;
+        }
+
+        .zoom-hud-btn {
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: #CBD5E1;
+          width: 26px;
+          height: 26px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .zoom-hud-btn:hover {
+          background: rgba(11, 95, 255, 0.3);
+          border-color: #38BDF8;
+          color: #FFFFFF;
+          transform: scale(1.08);
+        }
+
+        .zoom-hud-badge {
+          background: transparent;
+          border: none;
+          font-size: 0.74rem;
+          font-weight: 800;
+          font-family: monospace;
+          color: #38BDF8;
+          padding: 2px 6px;
+          cursor: pointer;
+          border-radius: 6px;
+          transition: all 0.15s;
+        }
+
+        .zoom-hud-badge:hover {
+          background: rgba(56, 189, 248, 0.15);
+          color: #FFFFFF;
+        }
+
+        .zoom-hud-divider {
+          width: 1px;
+          height: 14px;
+          background: rgba(255, 255, 255, 0.15);
+          margin: 0 2px;
+        }
+
+        .zoom-hud-hint {
+          font-size: 0.68rem;
+          color: #94A3B8;
+          padding-left: 6px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          display: flex;
+          align-items: center;
+          white-space: nowrap;
+        }
+
+        @media (max-width: 900px) {
+          .zoom-hud-hint,
+          .zoom-preset-list {
+            display: none;
+          }
         }
 
         .map-scalable-wrapper {
