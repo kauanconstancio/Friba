@@ -55,6 +55,8 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   const [zoom, setZoom] = useState<number>(100);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [isWheelZooming, setIsWheelZooming] = useState(false);
+  const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   
@@ -136,36 +138,54 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
 
   // Zoom Inteligente com Scroll do Mouse direcionado para a posição do cursor
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
+    const el = viewportRef.current;
+    if (!el) return;
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
+      e.stopPropagation();
 
-      const delta = -e.deltaY;
-      const zoomFactor = delta > 0 ? 1.14 : 0.88;
+      setIsWheelZooming(true);
+      if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
+      wheelTimeoutRef.current = setTimeout(() => {
+        setIsWheelZooming(false);
+      }, 150);
+
+      // Determinar direção de zoom (+ ou -)
+      const isZoomIn = e.deltaY < 0;
+      // Passo de zoom consistente: 15% para rolagem tradicional de roda, 10% para suave
+      const step = Math.abs(e.deltaY) >= 50 ? 15 : 10;
 
       setZoom(prevZoom => {
-        const nextZoom = Math.min(300, Math.max(50, Math.round(prevZoom * zoomFactor)));
+        const nextZoom = isZoomIn 
+          ? Math.min(300, prevZoom + step) 
+          : Math.max(50, prevZoom - step);
+
         if (nextZoom === prevZoom) return prevZoom;
 
-        const rect = viewport.getBoundingClientRect();
+        if (nextZoom === 100) {
+          setPanOffset({ x: 0, y: 0 });
+          return nextZoom;
+        }
+
+        const rect = el.getBoundingClientRect();
         const mouseX = e.clientX - (rect.left + rect.width / 2);
         const mouseY = e.clientY - (rect.top + rect.height / 2);
 
-        const scaleRatio = nextZoom / prevZoom;
+        const ratio = nextZoom / prevZoom;
         setPanOffset(prevPan => ({
-          x: mouseX - (mouseX - prevPan.x) * scaleRatio,
-          y: mouseY - (mouseY - prevPan.y) * scaleRatio
+          x: Math.round(mouseX - (mouseX - prevPan.x) * ratio),
+          y: Math.round(mouseY - (mouseY - prevPan.y) * ratio)
         }));
 
         return nextZoom;
       });
     };
 
-    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    el.addEventListener('wheel', handleWheel, { passive: false });
     return () => {
-      viewport.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('wheel', handleWheel);
+      if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
     };
   }, []);
 
@@ -755,56 +775,8 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           <span className="map-badge-tag">5v5 COMPETITIVO</span>
         </div>
 
-        {/* Controles de Zoom & Ações Rápidas */}
+        {/* Ações Rápidas: Desfazer, Limpar e Exportar */}
         <div className="tactical-top-actions">
-          {/* Zoom */}
-          <div className="zoom-controls-group">
-            <button 
-              className="zoom-btn" 
-              onClick={() => setZoom(prev => Math.max(50, prev - 15))}
-              title="Diminuir Zoom"
-            >
-              <ZoomOut size={14} />
-            </button>
-            <span 
-              className="zoom-display" 
-              onClick={handleResetZoom} 
-              title="Clique para resetar para 100% e centralizar"
-            >
-              {zoom}%
-            </span>
-            <button 
-              className="zoom-btn" 
-              onClick={() => setZoom(prev => Math.min(300, prev + 15))}
-              title="Aumentar Zoom"
-            >
-              <ZoomIn size={14} />
-            </button>
-            <button 
-              className="zoom-btn" 
-              onClick={handleResetZoom}
-              title="Ajustar e Centralizar Mapa"
-            >
-              <Maximize2 size={13} />
-            </button>
-          </div>
-
-          {/* Atalhos Rápidos de Zoom */}
-          <div className="zoom-preset-list">
-            {[75, 100, 150, 200].map(p => (
-              <button
-                key={p}
-                className={`zoom-preset-badge ${zoom === p ? 'active' : ''}`}
-                onClick={() => {
-                  setZoom(p);
-                  if (p === 100) setPanOffset({ x: 0, y: 0 });
-                }}
-                title={`Definir zoom em ${p}%`}
-              >
-                {p}%
-              </button>
-            ))}
-          </div>
 
           {/* Desfazer & Limpar */}
           <button 
@@ -932,7 +904,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
             className="map-scalable-wrapper"
             style={{ 
               transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom / 100})`,
-              transition: isPanning ? 'none' : 'transform 0.15s ease-out'
+              transition: (isPanning || isWheelZooming) ? 'none' : 'transform 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
             }}
           >
             <div 
@@ -1036,40 +1008,67 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
             </div>
           </div>
 
-          {/* Mini HUD Flutuante de Zoom & Dicas de Navegação */}
-          <div className="map-zoom-hud">
+        </div>
+
+        {/* BARRA LATERAL DIREITA: CONTROLES VERTICAIS DE ZOOM & NAVEGAÇÃO */}
+        <div className="tactical-right-zoom-dock">
+          <div className="zoom-dock-group">
+            {/* Botão Zoom In */}
             <button 
-              className="zoom-hud-btn" 
-              onClick={() => setZoom(prev => Math.max(50, prev - 15))}
-              title="Diminuir Zoom"
-            >
-              <ZoomOut size={13} />
-            </button>
-            <button 
-              className="zoom-hud-badge" 
-              onClick={handleResetZoom}
-              title="Clique para resetar (100%) e centralizar"
-            >
-              {zoom}%
-            </button>
-            <button 
-              className="zoom-hud-btn" 
+              className="zoom-dock-btn"
               onClick={() => setZoom(prev => Math.min(300, prev + 15))}
-              title="Aumentar Zoom"
+              title="Aumentar Zoom (+15%)"
             >
-              <ZoomIn size={13} />
+              <ZoomIn size={18} />
             </button>
-            <div className="zoom-hud-divider" />
+
+            {/* Display de Zoom Atual (clicável para resetar) */}
             <button 
-              className="zoom-hud-btn" 
+              className="zoom-dock-value"
               onClick={handleResetZoom}
-              title="Ajustar Mapa à Tela (100%)"
+              title="Clique para resetar para 100% e centralizar"
             >
-              <Maximize2 size={12} />
+              <span className="zoom-dock-number">{zoom}</span>
+              <span className="zoom-dock-unit">%</span>
             </button>
-            <div className="zoom-hud-hint">
-              <span>Scroll para zoom • Arraste com a Mão ou segure Espaço</span>
-            </div>
+
+            {/* Botão Zoom Out */}
+            <button 
+              className="zoom-dock-btn"
+              onClick={() => setZoom(prev => Math.max(50, prev - 15))}
+              title="Diminuir Zoom (-15%)"
+            >
+              <ZoomOut size={18} />
+            </button>
+
+            {/* Resetar / Ajustar à Tela */}
+            <button 
+              className="zoom-dock-btn reset"
+              onClick={handleResetZoom}
+              title="Ajustar e Centralizar Mapa (100%)"
+            >
+              <Maximize2 size={16} />
+            </button>
+          </div>
+
+          <div className="zoom-dock-divider" />
+
+          {/* Presets Rápidos Verticais */}
+          <div className="zoom-dock-presets">
+            <span className="dock-section-label">ZOOM</span>
+            {[200, 150, 100, 75, 50].map(level => (
+              <button
+                key={level}
+                className={`zoom-preset-vertical-btn ${zoom === level ? 'active' : ''}`}
+                onClick={() => {
+                  setZoom(level);
+                  if (level === 100) setPanOffset({ x: 0, y: 0 });
+                }}
+                title={`Definir zoom em ${level}%`}
+              >
+                {level}%
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -1298,70 +1297,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           gap: 10px;
         }
 
-        .zoom-controls-group {
-          display: flex;
-          align-items: center;
-          background: #0d1526;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 8px;
-          padding: 2px 4px;
-        }
 
-        .zoom-btn {
-          background: transparent;
-          border: none;
-          color: #94A3B8;
-          padding: 6px;
-          display: flex;
-          align-items: center;
-          cursor: pointer;
-          border-radius: 4px;
-          transition: all 0.15s;
-        }
-
-        .zoom-btn:hover {
-          color: #FFFFFF;
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .zoom-display {
-          font-size: 0.76rem;
-          font-weight: 800;
-          font-family: monospace;
-          color: #E2E8F0;
-          padding: 0 8px;
-          cursor: pointer;
-        }
-
-        .zoom-preset-list {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .zoom-preset-badge {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.09);
-          border-radius: 6px;
-          color: #94A3B8;
-          font-size: 0.68rem;
-          font-weight: 700;
-          padding: 4px 7px;
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-
-        .zoom-preset-badge:hover {
-          background: rgba(255, 255, 255, 0.12);
-          color: #FFFFFF;
-        }
-
-        .zoom-preset-badge.active {
-          background: rgba(11, 95, 255, 0.25);
-          border-color: #38BDF8;
-          color: #38BDF8;
-          font-weight: 800;
-        }
 
         .action-btn-pill {
           display: flex;
@@ -1414,10 +1350,10 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           color: #FFFFFF;
         }
 
-        /* PALCO PRINCIPAL SUPERIOR: TOOLBAR ESQUERDA + MAPA EXPANDIDO */
+        /* PALCO PRINCIPAL SUPERIOR: TOOLBAR ESQUERDA + MAPA EXPANDIDO + ZOOM DOCK DIREITA */
         .tactical-top-stage-layout {
           display: grid;
-          grid-template-columns: 56px 1fr;
+          grid-template-columns: 56px 1fr 56px;
           gap: 12px;
           align-items: stretch;
         }
@@ -1547,34 +1483,38 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           cursor: grabbing !important;
         }
 
-        /* MINI HUD FLUTUANTE DE ZOOM */
-        .map-zoom-hud {
-          position: absolute;
-          bottom: 14px;
-          right: 14px;
-          z-index: 40;
+        /* BARRA LATERAL DIREITA: CONTROLES VERTICAIS DE ZOOM ESTILO APPLE GLASS */
+        .tactical-right-zoom-dock {
+          background: rgba(10, 16, 32, 0.68);
+          backdrop-filter: blur(28px) saturate(190%);
+          -webkit-backdrop-filter: blur(28px) saturate(190%);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 20px;
+          padding: 12px 6px;
           display: flex;
+          flex-direction: column;
           align-items: center;
-          gap: 6px;
-          background: rgba(10, 16, 32, 0.85);
-          backdrop-filter: blur(20px) saturate(180%);
-          -webkit-backdrop-filter: blur(20px) saturate(180%);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          border-radius: 30px;
-          padding: 4px 10px;
+          gap: 12px;
           box-shadow: 
-            0 12px 32px rgba(0, 0, 0, 0.65),
-            inset 0 1px 1.5px rgba(255, 255, 255, 0.2);
-          pointer-events: auto;
+            0 20px 48px rgba(0, 0, 0, 0.5),
+            inset 0 1px 1.5px rgba(255, 255, 255, 0.22);
         }
 
-        .zoom-hud-btn {
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          color: #CBD5E1;
-          width: 26px;
-          height: 26px;
+        .zoom-dock-group {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          width: 100%;
+        }
+
+        .zoom-dock-btn {
+          width: 40px;
+          height: 40px;
           border-radius: 50%;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: #94A3B8;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1582,54 +1522,103 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           transition: all 0.15s ease;
         }
 
-        .zoom-hud-btn:hover {
-          background: rgba(11, 95, 255, 0.3);
-          border-color: #38BDF8;
+        .zoom-dock-btn:hover {
           color: #FFFFFF;
-          transform: scale(1.08);
+          background: rgba(11, 95, 255, 0.25);
+          border-color: #38BDF8;
+          transform: scale(1.06);
         }
 
-        .zoom-hud-badge {
-          background: transparent;
-          border: none;
-          font-size: 0.74rem;
-          font-weight: 800;
+        .zoom-dock-btn.reset:hover {
+          background: rgba(16, 185, 129, 0.25);
+          border-color: #34D399;
+          color: #34D399;
+        }
+
+        .zoom-dock-value {
+          background: rgba(11, 95, 255, 0.12);
+          border: 1px solid rgba(11, 95, 255, 0.35);
+          border-radius: 10px;
+          padding: 6px 4px;
+          width: 42px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .zoom-dock-value:hover {
+          background: rgba(11, 95, 255, 0.25);
+          border-color: #38BDF8;
+          transform: scale(1.05);
+        }
+
+        .zoom-dock-number {
+          font-size: 0.76rem;
+          font-weight: 900;
           font-family: monospace;
           color: #38BDF8;
-          padding: 2px 6px;
-          cursor: pointer;
-          border-radius: 6px;
-          transition: all 0.15s;
+          line-height: 1;
         }
 
-        .zoom-hud-badge:hover {
-          background: rgba(56, 189, 248, 0.15);
+        .zoom-dock-unit {
+          font-size: 0.58rem;
+          font-weight: 700;
+          color: #94A3B8;
+          line-height: 1;
+          margin-top: 2px;
+        }
+
+        .zoom-dock-divider {
+          width: 32px;
+          height: 1px;
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        .zoom-dock-presets {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 5px;
+          width: 100%;
+        }
+
+        .dock-section-label {
+          font-size: 0.58rem;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          color: #64748B;
+          margin-bottom: 2px;
+        }
+
+        .zoom-preset-vertical-btn {
+          width: 42px;
+          height: 26px;
+          border-radius: 7px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: #94A3B8;
+          font-size: 0.68rem;
+          font-weight: 800;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .zoom-preset-vertical-btn:hover {
+          background: rgba(255, 255, 255, 0.1);
           color: #FFFFFF;
         }
 
-        .zoom-hud-divider {
-          width: 1px;
-          height: 14px;
-          background: rgba(255, 255, 255, 0.15);
-          margin: 0 2px;
-        }
-
-        .zoom-hud-hint {
-          font-size: 0.68rem;
-          color: #94A3B8;
-          padding-left: 6px;
-          font-weight: 600;
-          letter-spacing: 0.01em;
-          display: flex;
-          align-items: center;
-          white-space: nowrap;
-        }
-
-        @media (max-width: 900px) {
-          .zoom-hud-hint,
-          .zoom-preset-list {
-            display: none;
-          }
+        .zoom-preset-vertical-btn.active {
+          background: #0B5FFF;
+          border-color: #38BDF8;
+          color: #FFFFFF;
+          box-shadow: 0 0 10px rgba(11, 95, 255, 0.55);
         }
 
         .map-scalable-wrapper {
