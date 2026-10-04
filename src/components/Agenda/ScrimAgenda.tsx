@@ -5,7 +5,6 @@ import {
   ChevronRight, 
   Plus, 
   Clock, 
-  ExternalLink, 
   X, 
   Check, 
   Swords, 
@@ -14,12 +13,23 @@ import {
   Tv, 
   Trash2, 
   CalendarDays, 
-  Users
+  Users,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  HelpCircle,
+  Crown,
+  Play,
+  Edit3,
+  UserCheck,
+  ShieldAlert
 } from 'lucide-react';
-import type { ScrimEvent, Role } from '../../types';
+import type { ScrimEvent, Role, TeamMember, AppUser, ScrimAttendance, ScrimGameDetail } from '../../types';
 
 interface ScrimAgendaProps {
   currentRole: Role;
+  currentUser?: AppUser | null;
+  members: TeamMember[];
   scrims: ScrimEvent[];
   onAddScrim: (scrim: ScrimEvent) => void;
   onUpdateScrim: (scrim: ScrimEvent) => void;
@@ -29,14 +39,16 @@ interface ScrimAgendaProps {
 
 export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   currentRole,
+  currentUser,
+  members,
   scrims,
   onAddScrim,
   onUpdateScrim,
   onDeleteScrim,
   teamName
 }) => {
-  // Data base padrão sincronizada com a data de referência competitiva (Setembro 2026)
-  const [currentDate, setCurrentDate] = useState<Date>(() => new Date(2026, 8, 26)); // 26 de Setembro de 2026
+  // Data base padrão dinâmica (Hoje em tempo real)
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [categoryFilter, setCategoryFilter] = useState<string>('Todos');
 
   // Modais
@@ -44,27 +56,47 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   const [selectedEvent, setSelectedEvent] = useState<ScrimEvent | null>(null);
   const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
 
+  // Estados para prompt de presença (atraso / ausência)
+  const [attendancePromptType, setAttendancePromptType] = useState<'Atraso' | 'Ausente' | null>(null);
+  const [attendanceNoteInput, setAttendanceNoteInput] = useState('');
+
   // Form State Novo Evento
   const [formData, setFormData] = useState<Partial<ScrimEvent>>({
     opponentTeam: '',
     opponentTag: '',
     title: '',
     opponentContact: '',
-    date: '2026-09-26',
+    date: new Date().toISOString().split('T')[0],
     time: '19:30',
     endTime: '21:00',
     format: 'MD3',
     status: 'Confirmado',
     category: 'Amistoso',
     notes: '',
-    lineup: ['Kauan Constancio', 'Ana Vidigal', 'BynSeven', 'Soul', 'Digo']
+    lineup: []
   });
 
-  // Form State Resultado
-  const [scoreUs, setScoreUs] = useState(2);
-  const [scoreThem, setScoreThem] = useState(1);
+  // Custom player input para o formulário de escalação
+  const [customPlayerName, setCustomPlayerName] = useState('');
+
+  // Form State Resultado / Pós-Treino
   const [vodUrl, setVodUrl] = useState('');
   const [resultNotes, setResultNotes] = useState('');
+  const [selectedMvp, setSelectedMvp] = useState('');
+  const [gameDetails, setGameDetails] = useState<ScrimGameDetail[]>([]);
+
+  // Placar da série calculado automaticamente das vitórias/derrotas de partida a partida
+  const computedScoreUs = gameDetails.filter(g => {
+    const us = Number(g.scoreUs) || 0;
+    const them = Number(g.scoreThem) || 0;
+    return us > them && (us > 0 || them > 0);
+  }).length;
+
+  const computedScoreThem = gameDetails.filter(g => {
+    const us = Number(g.scoreUs) || 0;
+    const them = Number(g.scoreThem) || 0;
+    return them > us && (us > 0 || them > 0);
+  }).length;
 
   const canManage = currentRole === 'Dono' || currentRole === 'Manager' || currentRole === 'Coach';
 
@@ -82,7 +114,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   };
 
   const handleToday = () => {
-    setCurrentDate(new Date(2026, 8, 26));
+    setCurrentDate(new Date());
   };
 
   // Cálculo dinâmico das células do mês (começando na Segunda-feira)
@@ -124,7 +156,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   };
 
   const isTodayDate = (d: Date) => {
-    return formatDateISO(d) === '2026-09-26';
+    return formatDateISO(d) === formatDateISO(new Date());
   };
 
   // Cores e Ícones por Categoria
@@ -178,11 +210,20 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
     }
   };
 
+  // Jogadores disponíveis no elenco
+  const starters = members.filter(m => m.role === 'Jogador' && m.status === 'Titular');
+
   // Abertura do Modal de Novo Evento para uma data específica
   const handleOpenSlot = (dateStr: string, hourStr: string) => {
     if (!canManage) return;
     const endH = parseInt(hourStr.split(':')[0], 10) + 1;
     const endTime = `${String(endH).padStart(2, '0')}:30`;
+
+    // Escalação padrão: seleciona automaticamente os 5 titulares se existirem
+    const defaultLineup = starters.length > 0 
+      ? starters.map(s => s.name) 
+      : members.slice(0, 5).map(m => m.name);
+
     setFormData({
       opponentTeam: '',
       opponentTag: '',
@@ -195,48 +236,231 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
       status: 'Confirmado',
       category: 'Amistoso',
       notes: '',
-      lineup: ['Kauan Constancio', 'Ana Vidigal', 'BynSeven', 'Soul', 'Digo']
+      lineup: defaultLineup
     });
+    setCustomPlayerName('');
     setIsAddModalOpen(true);
+  };
+
+  // Alternar jogador na escalação do formulário
+  const handleTogglePlayerInLineup = (playerName: string) => {
+    const currentLineup = formData.lineup || [];
+    if (currentLineup.includes(playerName)) {
+      setFormData({
+        ...formData,
+        lineup: currentLineup.filter(p => p !== playerName)
+      });
+    } else {
+      setFormData({
+        ...formData,
+        lineup: [...currentLineup, playerName]
+      });
+    }
+  };
+
+  const handleSelectAllStarters = () => {
+    const starterNames = starters.map(s => s.name);
+    if (starterNames.length > 0) {
+      setFormData({ ...formData, lineup: starterNames });
+    }
+  };
+
+  const handleClearLineup = () => {
+    setFormData({ ...formData, lineup: [] });
+  };
+
+  const handleAddCustomPlayer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customPlayerName.trim()) return;
+    const currentLineup = formData.lineup || [];
+    if (!currentLineup.includes(customPlayerName.trim())) {
+      setFormData({ ...formData, lineup: [...currentLineup, customPlayerName.trim()] });
+    }
+    setCustomPlayerName('');
   };
 
   // Salvar novo evento
   const handleSaveAdd = (e: React.FormEvent) => {
     e.preventDefault();
     const finalTitle = formData.title || (formData.category === 'Amistoso' ? `Scrim vs ${formData.opponentTeam || 'Adversário'}` : formData.category === 'Treino' ? 'Treino Tático' : 'Compromisso Friba');
+    
+    // Lista inicial de presença com status 'Pendente' para os atletas escalados
+    const initialAttendance: ScrimAttendance[] = (formData.lineup || []).map(playerName => {
+      const matchedMember = members.find(m => m.name.toLowerCase() === playerName.toLowerCase() || m.nickname.toLowerCase() === playerName.toLowerCase());
+      return {
+        memberId: matchedMember?.id || `anon-${Date.now()}-${Math.random()}`,
+        memberName: matchedMember?.name || playerName,
+        memberNickname: matchedMember?.nickname || playerName,
+        status: 'Confirmado', // Por padrão, ao escalar, o coach assume presença inicial
+        updatedAt: 'Criado pela Staff'
+      };
+    });
+
     const newScrim: ScrimEvent = {
       id: `scrim-${Date.now()}`,
       opponentTeam: formData.opponentTeam || 'Interno Friba',
       opponentTag: formData.opponentTag || 'FRIBA',
       title: finalTitle,
       opponentContact: formData.opponentContact,
-      date: formData.date || '2026-09-26',
+      date: formData.date || formatDateISO(new Date()),
       time: formData.time || '19:30',
       endTime: formData.endTime || '21:00',
       format: formData.format || 'MD3',
       status: formData.status || 'Confirmado',
       category: formData.category || 'Amistoso',
-      lineup: formData.lineup && formData.lineup.length > 0 ? formData.lineup : ['Kauan Constancio', 'Ana Vidigal', 'BynSeven', 'Soul', 'Digo'],
-      notes: formData.notes
+      lineup: formData.lineup && formData.lineup.length > 0 ? formData.lineup : (starters.map(s => s.name).length > 0 ? starters.map(s => s.name) : ['Titulares Friba']),
+      notes: formData.notes,
+      attendance: initialAttendance
     };
+
     onAddScrim(newScrim);
     setIsAddModalOpen(false);
   };
 
-  // Salvar resultado
+  // Abrir Modal de Registro de Resultado / Pós-Treino
+  const handleOpenScoreModal = () => {
+    if (!selectedEvent) return;
+    setVodUrl(selectedEvent.vodUrl || '');
+    setResultNotes(selectedEvent.notes || '');
+    setSelectedMvp(selectedEvent.mvpMemberName || (selectedEvent.lineup?.[0] || ''));
+
+    // Inicializar partidas da série (Games)
+    if (selectedEvent.games && selectedEvent.games.length > 0) {
+      setGameDetails(selectedEvent.games);
+    } else {
+      const numGames = selectedEvent.format === 'MD1' ? 1 : selectedEvent.format === 'MD3' ? 3 : 5;
+      const initialGames: ScrimGameDetail[] = Array.from({ length: numGames }).map((_, i) => ({
+        gameNumber: i + 1,
+        scoreUs: 0,
+        scoreThem: 0,
+        mvpMemberName: selectedEvent.lineup?.[0] || '',
+        notes: ''
+      }));
+      setGameDetails(initialGames);
+    }
+
+    setIsScoreModalOpen(true);
+  };
+
+  // Salvar resultado do pós-treino com placar calculado automaticamente
   const handleSaveResult = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEvent) return;
     const updated: ScrimEvent = {
       ...selectedEvent,
       status: 'Concluído',
-      score: { us: scoreUs, them: scoreThem },
+      score: { us: computedScoreUs, them: computedScoreThem },
       vodUrl,
-      notes: resultNotes || selectedEvent.notes
+      notes: resultNotes || selectedEvent.notes,
+      mvpMemberName: selectedMvp || undefined,
+      games: gameDetails
     };
     onUpdateScrim(updated);
     setSelectedEvent(updated);
     setIsScoreModalOpen(false);
+  };
+
+  // Atualizar pontos de uma partida específica da série
+  const handleGameScoreChange = (index: number, field: 'scoreUs' | 'scoreThem' | 'mvpMemberName', value: any) => {
+    setGameDetails(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleAddGameRow = () => {
+    setGameDetails(prev => [
+      ...prev,
+      {
+        gameNumber: prev.length + 1,
+        scoreUs: 0,
+        scoreThem: 0
+      }
+    ]);
+  };
+
+  const handleRemoveGameRow = (index: number) => {
+    setGameDetails(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Manipulação de RSVP / Presença de Atletas
+  const handleSetUserAttendance = (status: 'Confirmado' | 'Atraso' | 'Ausente', note?: string) => {
+    if (!selectedEvent || !currentUser) return;
+
+    const currentAttendance = selectedEvent.attendance || [];
+    const userIdentifier = currentUser.name.toLowerCase();
+    const existingIdx = currentAttendance.findIndex(a => 
+      (currentUser.id && a.memberId === currentUser.id) ||
+      a.memberName.toLowerCase() === userIdentifier ||
+      (currentUser.nickname && a.memberNickname?.toLowerCase() === currentUser.nickname.toLowerCase())
+    );
+
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newRecord: ScrimAttendance = {
+      memberId: currentUser.id,
+      memberName: currentUser.name,
+      memberNickname: currentUser.nickname,
+      status,
+      note: note || '',
+      updatedAt: `Hoje às ${timeStr}`
+    };
+
+    let updatedList: ScrimAttendance[];
+    if (existingIdx >= 0) {
+      updatedList = [...currentAttendance];
+      updatedList[existingIdx] = newRecord;
+    } else {
+      updatedList = [...currentAttendance, newRecord];
+    }
+
+    const updatedEvent: ScrimEvent = {
+      ...selectedEvent,
+      attendance: updatedList
+    };
+
+    onUpdateScrim(updatedEvent);
+    setSelectedEvent(updatedEvent);
+    setAttendancePromptType(null);
+    setAttendanceNoteInput('');
+  };
+
+  // Staff alterar a presença de um membro específico
+  const handleSetMemberAttendance = (targetName: string, status: 'Confirmado' | 'Atraso' | 'Ausente', note?: string) => {
+    if (!selectedEvent) return;
+
+    const matchedMember = members.find(m => m.name.toLowerCase() === targetName.toLowerCase() || m.nickname.toLowerCase() === targetName.toLowerCase());
+    const currentAttendance = selectedEvent.attendance || [];
+    const existingIdx = currentAttendance.findIndex(a => 
+      a.memberName.toLowerCase() === targetName.toLowerCase() ||
+      (matchedMember?.id && a.memberId === matchedMember.id)
+    );
+
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newRecord: ScrimAttendance = {
+      memberId: matchedMember?.id || `p-${Date.now()}`,
+      memberName: matchedMember?.name || targetName,
+      memberNickname: matchedMember?.nickname || targetName,
+      status,
+      note: note || '',
+      updatedAt: `Por ${currentRole} às ${timeStr}`
+    };
+
+    let updatedList: ScrimAttendance[];
+    if (existingIdx >= 0) {
+      updatedList = [...currentAttendance];
+      updatedList[existingIdx] = newRecord;
+    } else {
+      updatedList = [...currentAttendance, newRecord];
+    }
+
+    const updatedEvent: ScrimEvent = {
+      ...selectedEvent,
+      attendance: updatedList
+    };
+
+    onUpdateScrim(updatedEvent);
+    setSelectedEvent(updatedEvent);
   };
 
   const handleDelete = (id: string) => {
@@ -265,6 +489,28 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
     return `${monthNames[currentDate.getMonth()]} de ${currentDate.getFullYear()}`;
   };
 
+  // Verificar se o usuário logado está na lineup do evento selecionado
+  const isCurrentUserInLineup = () => {
+    if (!currentUser || !selectedEvent?.lineup) return false;
+    const nameLow = currentUser.name.toLowerCase();
+    const nickLow = currentUser.nickname.toLowerCase();
+    return selectedEvent.lineup.some(p => p.toLowerCase() === nameLow || p.toLowerCase() === nickLow);
+  };
+
+  // Pegar status de presença do usuário logado
+  const getCurrentUserAttendance = (): ScrimAttendance | undefined => {
+    if (!currentUser || !selectedEvent?.attendance) return undefined;
+    const nameLow = currentUser.name.toLowerCase();
+    const nickLow = currentUser.nickname.toLowerCase();
+    return selectedEvent.attendance.find(a => 
+      (currentUser.id && a.memberId === currentUser.id) ||
+      a.memberName.toLowerCase() === nameLow ||
+      (a.memberNickname && a.memberNickname.toLowerCase() === nickLow)
+    );
+  };
+
+  const myAttendance = getCurrentUserAttendance();
+
   return (
     <div className="teams-calendar-wrapper">
       {/* BARRA SUPERIOR ESTILO MICROSOFT TEAMS */}
@@ -276,7 +522,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
             </div>
             <div>
               <h2>Agenda & Calendário</h2>
-              <span className="teams-sub-desc">Controle de Scrims, Treinos e Campeonatos • {teamName}</span>
+              <span className="teams-sub-desc">Controle de Scrims, Treinos e Presença Oficial • {teamName}</span>
             </div>
           </div>
 
@@ -316,7 +562,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           </div>
 
           {canManage && (
-            <button className="btn-new-event" onClick={() => handleOpenSlot('2026-09-26', '19:30')}>
+            <button className="btn-new-event" onClick={() => handleOpenSlot(formatDateISO(new Date()), '19:30')}>
               <Plus size={15} /> Novo Compromisso
             </button>
           )}
@@ -361,6 +607,12 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                     const catInfo = getCategoryDetails(event.category);
                     const isDone = event.status === 'Concluído';
 
+                    // Resumo de presenças
+                    const confirmedCount = event.attendance 
+                      ? event.attendance.filter(a => a.status === 'Confirmado').length 
+                      : (event.lineup?.length || 5);
+                    const totalLineup = event.lineup?.length || 5;
+
                     return (
                       <div
                         key={event.id}
@@ -400,13 +652,25 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                           </span>
                         </div>
 
-                        {/* Bottom Row: Tag do adversário ou categoria */}
+                        {/* Bottom Row: Tag do adversário ou categoria + Pílula de Presença */}
                         <div className="m-card-bottom">
                           <span className="m-tag-pill" style={{ color: catInfo.text }}>
                             {event.opponentTag ? `@${event.opponentTag}` : catInfo.label}
                           </span>
-                          {event.status === 'Confirmado' && (
-                            <span className="m-status-dot-confirmed">Confirmado</span>
+
+                          {!isDone && (
+                            <span 
+                              className={`m-attendance-pill ${confirmedCount === totalLineup ? 'all-in' : 'pending'}`}
+                              title={`${confirmedCount} de ${totalLineup} confirmaram presença`}
+                            >
+                              <UserCheck size={10} /> {confirmedCount}/{totalLineup}
+                            </span>
+                          )}
+
+                          {isDone && event.mvpMemberName && (
+                            <span className="m-mvp-pill" title={`MVP: ${event.mvpMemberName}`}>
+                              <Crown size={10} color="#FBBF24" /> MVP
+                            </span>
                           )}
                         </div>
                       </div>
@@ -420,7 +684,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL: DETALHES DO EVENTO SELECIONADO */}
+      {/* MODAL: DETALHES DO EVENTO SELECIONADO & RSVP & RELATÓRIO PÓS-TREINO */}
       {/* ========================================================================= */}
       {selectedEvent && (
         <div className="modal-overlay" onClick={() => setSelectedEvent(null)}>
@@ -431,7 +695,12 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                   className="cat-indicator" 
                   style={{ background: getCategoryDetails(selectedEvent.category).color }} 
                 />
-                <h3>{selectedEvent.title || selectedEvent.opponentTeam}</h3>
+                <div>
+                  <h3>{selectedEvent.title || selectedEvent.opponentTeam}</h3>
+                  <span className="modal-sub-tag">
+                    {getCategoryDetails(selectedEvent.category).label} • {selectedEvent.format} • {selectedEvent.date} às {selectedEvent.time}
+                  </span>
+                </div>
               </div>
               <button onClick={() => setSelectedEvent(null)} className="close-btn">
                 <X size={18} />
@@ -439,22 +708,204 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
             </div>
 
             <div className="detail-body">
+              {/* 1. SEÇÃO DE RESULTADO PÓS-TREINO (Se o evento estiver concluído) */}
+              {selectedEvent.status === 'Concluído' && selectedEvent.score && (
+                <div className="postmatch-card">
+                  <div className="pm-header-row">
+                    <div className="pm-status-col">
+                      {selectedEvent.score.us > selectedEvent.score.them ? (
+                        <div className="pm-badge win">
+                          <Trophy size={14} /> VITÓRIA DA FRIBA
+                        </div>
+                      ) : selectedEvent.score.us < selectedEvent.score.them ? (
+                        <div className="pm-badge defeat">
+                          <ShieldAlert size={14} /> DERROTA
+                        </div>
+                      ) : (
+                        <div className="pm-badge tie">EMPATE</div>
+                      )}
+                      <span className="pm-format-desc">Série {selectedEvent.format} Concluída</span>
+                    </div>
+
+                    <div className="pm-score-huge">
+                      <span className="pm-us">FRIBA {selectedEvent.score.us}</span>
+                      <span className="pm-x">x</span>
+                      <span className="pm-them">{selectedEvent.score.them} {selectedEvent.opponentTag}</span>
+                    </div>
+                  </div>
+
+                  {/* MVP Destaque */}
+                  {selectedEvent.mvpMemberName && (
+                    <div className="pm-mvp-box">
+                      <div className="pm-crown-badge">
+                        <Crown size={16} />
+                      </div>
+                      <div className="pm-mvp-text">
+                        <span className="pm-mvp-lbl">MVP DA SÉRIE:</span>
+                        <strong className="pm-mvp-name">{selectedEvent.mvpMemberName}</strong>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tabela de Jogos / Breakdown Partida a Partida */}
+                  {selectedEvent.games && selectedEvent.games.length > 0 && (
+                    <div className="pm-games-breakdown">
+                      <span className="pm-breakdown-title">Placar de Aeos Points por Partida:</span>
+                      <div className="pm-games-grid">
+                        {selectedEvent.games.map((g, idx) => (
+                          <div key={idx} className={`pm-game-row ${g.scoreUs > g.scoreThem ? 'game-win' : 'game-loss'}`}>
+                            <span className="g-num">Partida {g.gameNumber}</span>
+                            <div className="g-scores">
+                              <span className="g-score-us">{g.scoreUs} pts</span>
+                              <span className="g-vs">x</span>
+                              <span className="g-score-them">{g.scoreThem} pts</span>
+                            </div>
+                            <span className={`g-res ${g.scoreUs > g.scoreThem ? 'win' : 'loss'}`}>
+                              {g.scoreUs > g.scoreThem ? 'Vitória' : 'Derrota'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* VOD Link */}
+                  {selectedEvent.vodUrl && (
+                    <div className="pm-vod-action-row">
+                      <a href={selectedEvent.vodUrl} target="_blank" rel="noreferrer" className="btn-vod-action">
+                        <Play size={14} /> Assistir VOD / Gravação da Scrim
+                      </a>
+                    </div>
+                  )}
+
+                  {canManage && (
+                    <div className="pm-edit-btn-row">
+                      <button className="btn-text-secondary" onClick={handleOpenScoreModal}>
+                        <Edit3 size={13} /> Editar Relatório / Placar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. BANNER DE CONFIRMAÇÃO DE PRESENÇA DO ATLETA LOGADO */}
+              {selectedEvent.status !== 'Concluído' && currentUser && (
+                <div className="my-attendance-card">
+                  <div className="attendance-prompt-header">
+                    <div className="at-title-group">
+                      <UserCheck size={18} className="text-blue" />
+                      <div>
+                        <h4>Sua Presença neste Treino</h4>
+                        <span className="at-sub">
+                          {isCurrentUserInLineup() ? 'Você está escalado na lineup oficial.' : 'Confirme sua disponibilidade como titular ou reserva.'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="my-status-pill-display">
+                      {myAttendance?.status === 'Confirmado' && (
+                        <span className="status-badge-inline confirmado">
+                          <CheckCircle2 size={12} /> Presença Confirmada
+                        </span>
+                      )}
+                      {myAttendance?.status === 'Atraso' && (
+                        <span className="status-badge-inline agendado">
+                          <AlertTriangle size={12} /> Atraso Informado {myAttendance.note ? `(${myAttendance.note})` : ''}
+                        </span>
+                      )}
+                      {myAttendance?.status === 'Ausente' && (
+                        <span className="status-badge-inline ausente">
+                          <XCircle size={12} /> Ausência Registrada {myAttendance.note ? `(${myAttendance.note})` : ''}
+                        </span>
+                      )}
+                      {!myAttendance && (
+                        <span className="status-badge-inline pendente">
+                          <HelpCircle size={12} /> Aguardando sua resposta
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Botões de Ação de Presença */}
+                  <div className="attendance-buttons-row">
+                    <button 
+                      className={`btn-rsvp confirm ${myAttendance?.status === 'Confirmado' ? 'active' : ''}`}
+                      onClick={() => handleSetUserAttendance('Confirmado')}
+                    >
+                      <CheckCircle2 size={14} /> Confirmar Presença
+                    </button>
+
+                    <button 
+                      className={`btn-rsvp late ${myAttendance?.status === 'Atraso' ? 'active' : ''}`}
+                      onClick={() => {
+                        setAttendancePromptType('Atraso');
+                        setAttendanceNoteInput(myAttendance?.note || 'Chego em 15 minutos');
+                      }}
+                    >
+                      <AlertTriangle size={14} /> Vou me Atrasar
+                    </button>
+
+                    <button 
+                      className={`btn-rsvp absent ${myAttendance?.status === 'Ausente' ? 'active' : ''}`}
+                      onClick={() => {
+                        setAttendancePromptType('Ausente');
+                        setAttendanceNoteInput(myAttendance?.note || 'Compromisso urgente');
+                      }}
+                    >
+                      <XCircle size={14} /> Não Poderei Ir
+                    </button>
+                  </div>
+
+                  {/* Prompt rápido de justificativa (Atraso ou Ausência) */}
+                  {attendancePromptType && (
+                    <div className="attendance-note-prompt">
+                      <label>
+                        {attendancePromptType === 'Atraso' ? 'Qual sua previsão de chegada?' : 'Motivo da ausência:'}
+                      </label>
+                      <div className="prompt-input-row">
+                        <input
+                          type="text"
+                          placeholder={attendancePromptType === 'Atraso' ? 'Ex: Chego 19:45 após o trabalho' : 'Ex: Prova na faculdade'}
+                          value={attendanceNoteInput}
+                          onChange={(e) => setAttendanceNoteInput(e.target.value)}
+                        />
+                        <button 
+                          className="btn-primary-small"
+                          onClick={() => handleSetUserAttendance(attendancePromptType, attendanceNoteInput)}
+                        >
+                          Salvar
+                        </button>
+                        <button 
+                          className="btn-secondary-small"
+                          onClick={() => setAttendancePromptType(null)}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3. METADADOS GERAIS DO EVENTO */}
               <div className="detail-meta-grid">
                 <div className="meta-item">
                   <span className="label">Categoria</span>
                   <span className="val">{getCategoryDetails(selectedEvent.category).label}</span>
                 </div>
                 <div className="meta-item">
-                  <span className="label">Data</span>
-                  <span className="val">{selectedEvent.date}</span>
+                  <span className="label">Data & Horário</span>
+                  <span className="val">{selectedEvent.date} • {selectedEvent.time} – {selectedEvent.endTime || '21:00'}</span>
                 </div>
                 <div className="meta-item">
-                  <span className="label">Horário</span>
-                  <span className="val">{selectedEvent.time} – {selectedEvent.endTime || '21:00'}</span>
-                </div>
-                <div className="meta-item">
-                  <span className="label">Formato</span>
+                  <span className="label">Formato de Série</span>
                   <span className="val">{selectedEvent.format}</span>
+                </div>
+                <div className="meta-item">
+                  <span className="label">Status</span>
+                  <span className={`status-badge-inline ${selectedEvent.status.toLowerCase()}`}>
+                    {selectedEvent.status}
+                  </span>
                 </div>
               </div>
 
@@ -465,47 +916,101 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                 </div>
               )}
 
-              {/* Lineup Escalada */}
-              <div className="detail-field">
-                <span className="label"><Users size={13} /> Lineup Escalada:</span>
-                <div className="lineup-chips">
-                  {selectedEvent.lineup?.map((player, idx) => (
-                    <span key={idx} className="lineup-chip">{player}</span>
-                  )) || <span>Titulares Oficiais Friba</span>}
+              {/* 4. LISTA DE ESCALAÇÃO & CONFIRMAÇÃO DE PRESENÇA (ATLETAS) */}
+              <div className="detail-field attendance-roster-box">
+                <div className="lineup-header-row">
+                  <span className="label"><Users size={14} /> Escalação Oficial & Status de Presença:</span>
+                  <span className="count-pill">{selectedEvent.lineup?.length || 0} Atletas Escalados</span>
+                </div>
+
+                <div className="attendance-players-list">
+                  {(selectedEvent.lineup || []).map((playerName, idx) => {
+                    const matchedMember = members.find(m => 
+                      m.name.toLowerCase() === playerName.toLowerCase() || 
+                      m.nickname.toLowerCase() === playerName.toLowerCase()
+                    );
+                    const attRecord = selectedEvent.attendance?.find(a => 
+                      a.memberName.toLowerCase() === playerName.toLowerCase() ||
+                      (matchedMember?.id && a.memberId === matchedMember.id)
+                    );
+                    const status = attRecord?.status || 'Confirmado';
+
+                    return (
+                      <div key={idx} className={`att-player-card ${status.toLowerCase()}`}>
+                        <div className="att-player-left">
+                          <img 
+                            src={matchedMember?.avatar || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=100&auto=format&fit=crop&q=80'} 
+                            alt={playerName}
+                            className="att-player-avatar" 
+                          />
+                          <div>
+                            <div className="att-name-row">
+                              <strong className="att-player-name">{matchedMember?.name || playerName}</strong>
+                              {matchedMember?.nickname && (
+                                <span className="att-player-nick">@{matchedMember.nickname}</span>
+                              )}
+                              {matchedMember?.preferredLane && (
+                                <span className="att-player-lane">{matchedMember.preferredLane}</span>
+                              )}
+                            </div>
+                            {attRecord?.note && (
+                              <span className="att-note-bubble">Obs: {attRecord.note}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="att-player-right">
+                          <span className={`att-status-pill ${status.toLowerCase()}`}>
+                            {status === 'Confirmado' && <CheckCircle2 size={12} />}
+                            {status === 'Atraso' && <AlertTriangle size={12} />}
+                            {status === 'Ausente' && <XCircle size={12} />}
+                            {status}
+                          </span>
+
+                          {/* Se for Coach/Dono, permite alternar status rapidamente */}
+                          {canManage && selectedEvent.status !== 'Concluído' && (
+                            <div className="staff-quick-rsvp-actions">
+                              <button 
+                                title="Marcar Presença" 
+                                className="quick-btn-icon check"
+                                onClick={() => handleSetMemberAttendance(playerName, 'Confirmado')}
+                              >
+                                <Check size={11} />
+                              </button>
+                              <button 
+                                title="Marcar Atraso" 
+                                className="quick-btn-icon warn"
+                                onClick={() => {
+                                  const reason = prompt(`Informar previsão de atraso para ${playerName}:`, '15 min de atraso');
+                                  if (reason) handleSetMemberAttendance(playerName, 'Atraso', reason);
+                                }}
+                              >
+                                <Clock size={11} />
+                              </button>
+                              <button 
+                                title="Marcar Ausência" 
+                                className="quick-btn-icon cross"
+                                onClick={() => {
+                                  const reason = prompt(`Motivo da ausência de ${playerName}:`, 'Imprevisto');
+                                  if (reason) handleSetMemberAttendance(playerName, 'Ausente', reason);
+                                }}
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Status & Placar */}
-              <div className="detail-field status-field-box">
-                <div>
-                  <span className="label">Status:</span>
-                  <span className={`status-badge-inline ${selectedEvent.status.toLowerCase()}`}>
-                    {selectedEvent.status}
-                  </span>
-                </div>
-
-                {selectedEvent.score ? (
-                  <div className="score-summary">
-                    <span className="score-title">Resultado:</span>
-                    <span className="score-display">
-                      Friba <strong>{selectedEvent.score.us}</strong> x <strong>{selectedEvent.score.them}</strong> {selectedEvent.opponentTag}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-
+              {/* 5. INSTRUÇÕES & NOTAS TÁTICAS */}
               {selectedEvent.notes && (
                 <div className="detail-notes-box">
-                  <span className="label">Instruções / Notas Táticas:</span>
+                  <span className="label">Instruções / Notas Táticas do Coach:</span>
                   <p>{selectedEvent.notes}</p>
-                </div>
-              )}
-
-              {selectedEvent.vodUrl && (
-                <div className="vod-container">
-                  <a href={selectedEvent.vodUrl} target="_blank" rel="noreferrer" className="btn-vod-action">
-                    <ExternalLink size={14} /> Acessar Transmissão / VOD
-                  </a>
                 </div>
               )}
             </div>
@@ -516,7 +1021,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                   className="btn-danger-outline" 
                   onClick={() => handleDelete(selectedEvent.id)}
                 >
-                  <Trash2 size={14} /> Excluir
+                  <Trash2 size={14} /> Excluir Compromisso
                 </button>
               )}
 
@@ -524,15 +1029,9 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                 {canManage && selectedEvent.status !== 'Concluído' && (
                   <button 
                     className="btn-primary" 
-                    onClick={() => {
-                      setScoreUs(2);
-                      setScoreThem(1);
-                      setVodUrl(selectedEvent.vodUrl || '');
-                      setResultNotes(selectedEvent.notes || '');
-                      setIsScoreModalOpen(true);
-                    }}
+                    onClick={handleOpenScoreModal}
                   >
-                    <Check size={14} /> Registrar Resultado
+                    <Check size={14} /> Registrar Resultado & Relatório
                   </button>
                 )}
                 <button className="btn-secondary" onClick={() => setSelectedEvent(null)}>
@@ -545,13 +1044,16 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: NOVO COMPROMISSO */}
+      {/* MODAL: NOVO COMPROMISSO COM ESCALAÇÃO DINÂMICA DO ELENCO */}
       {/* ========================================================================= */}
       {isAddModalOpen && (
         <div className="modal-overlay" onClick={() => setIsAddModalOpen(false)}>
-          <div className="modal-content modal-teams-form" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content modal-teams-form modal-large" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Novo Compromisso na Agenda</h3>
+              <div>
+                <h3>Novo Compromisso na Agenda</h3>
+                <span className="modal-sub-tag">Agende scrims, treinos táticos e defina a escalação oficial</span>
+              </div>
               <button onClick={() => setIsAddModalOpen(false)} className="close-btn"><X size={18} /></button>
             </div>
 
@@ -574,7 +1076,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                   <label>Título ou Descrição Curta</label>
                   <input
                     type="text"
-                    placeholder="Ex: Scrim vs LOUD, Treino Rayquaza..."
+                    placeholder="Ex: Scrim vs LOUD, Treino de Rotações..."
                     value={formData.title || ''}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   />
@@ -588,7 +1090,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                     <input
                       type="text"
                       required
-                      placeholder="Ex: Keyd Stars, paiN Gaming"
+                      placeholder="Ex: Keyd Stars, paiN Gaming, LOUD"
                       value={formData.opponentTeam || ''}
                       onChange={(e) => setFormData({ ...formData, opponentTeam: e.target.value })}
                     />
@@ -597,7 +1099,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                     <label>TAG da Equipe</label>
                     <input
                       type="text"
-                      placeholder="Ex: VKS, PNG"
+                      placeholder="Ex: VKS, PNG, LOUD"
                       value={formData.opponentTag || ''}
                       onChange={(e) => setFormData({ ...formData, opponentTag: e.target.value })}
                     />
@@ -611,7 +1113,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                   <input
                     type="date"
                     required
-                    value={formData.date || '2026-09-26'}
+                    value={formData.date || formatDateISO(new Date())}
                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                   />
                 </div>
@@ -649,21 +1151,105 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                 </div>
 
                 <div className="form-group">
-                  <label>Contato do Organizador / Manager</label>
+                  <label>Contato do Organizador / Manager Rival</label>
                   <input
                     type="text"
-                    placeholder="Discord: @manager_tag"
+                    placeholder="Discord: @manager_tag ou WhatsApp"
                     value={formData.opponentContact || ''}
                     onChange={(e) => setFormData({ ...formData, opponentContact: e.target.value })}
                   />
                 </div>
               </div>
 
+              {/* SELETOR DINÂMICO DE ESCALAÇÃO DO ELENCO */}
+              <div className="lineup-selection-section">
+                <div className="lineup-selection-header">
+                  <div>
+                    <label className="section-label">
+                      <Users size={15} /> Escalação Oficial da Friba
+                    </label>
+                    <span className="lineup-hint">Clique nos atletas para adicionar ou remover da lineup</span>
+                  </div>
+
+                  <div className="lineup-quick-actions">
+                    <span className={`lineup-counter-badge ${(formData.lineup?.length || 0) === 5 ? 'good' : 'warning'}`}>
+                      {formData.lineup?.length || 0}/5 Selecionados
+                    </span>
+                    {starters.length > 0 && (
+                      <button 
+                        type="button" 
+                        className="btn-chip-action" 
+                        onClick={handleSelectAllStarters}
+                      >
+                        Escalar Titulares
+                      </button>
+                    )}
+                    <button 
+                      type="button" 
+                      className="btn-chip-action text-muted" 
+                      onClick={handleClearLineup}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Grade de Atletas Cadastrados */}
+                <div className="members-picker-grid">
+                  {members.map(member => {
+                    const isSelected = formData.lineup?.includes(member.name);
+                    return (
+                      <div
+                        key={member.id}
+                        className={`member-pick-card ${isSelected ? 'selected' : ''}`}
+                        onClick={() => handleTogglePlayerInLineup(member.name)}
+                      >
+                        <img src={member.avatar} alt={member.name} className="pick-avatar" />
+                        <div className="pick-info">
+                          <strong className="pick-name">{member.name}</strong>
+                          <span className="pick-nick">@{member.nickname}</span>
+                          <div className="pick-tags">
+                            <span className={`pick-role-pill ${member.status === 'Titular' ? 'titular' : 'reserva'}`}>
+                              {member.status || member.role}
+                            </span>
+                            {member.preferredLane && (
+                              <span className="pick-lane-pill">{member.preferredLane}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="pick-check-circle">
+                          {isSelected && <Check size={12} />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Campo extra para adicionar atleta avulso */}
+                <div className="custom-player-add-row">
+                  <input
+                    type="text"
+                    placeholder="Adicionar jogador avulso ou complete (Ex: Sub/Trial)"
+                    value={customPlayerName}
+                    onChange={(e) => setCustomPlayerName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomPlayer(e);
+                      }
+                    }}
+                  />
+                  <button type="button" className="btn-add-custom-p" onClick={handleAddCustomPlayer}>
+                    <Plus size={14} /> Incluir
+                  </button>
+                </div>
+              </div>
+
               <div className="form-group">
-                <label>Notas Táticas / Objetivos</label>
+                <label>Notas Táticas / Objetivos do Treino</label>
                 <textarea
                   rows={2}
-                  placeholder="Objetivos do treino, composições a testar..."
+                  placeholder="Objetivos do treino, composições a testar, rotações prioritárias..."
                   value={formData.notes || ''}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 />
@@ -683,58 +1269,144 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: REGISTRAR RESULTADO & VOD */}
+      {/* MODAL: REGISTRAR RESULTADO & RELATÓRIO PÓS-TREINO DETALHADO */}
       {/* ========================================================================= */}
       {isScoreModalOpen && selectedEvent && (
         <div className="modal-overlay" onClick={() => setIsScoreModalOpen(false)}>
-          <div className="modal-content modal-compact" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content modal-teams-form modal-large" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Registrar Resultado da Partida</h3>
+              <div>
+                <h3>Relatório Pós-Treino & Resultado Oficial</h3>
+                <span className="modal-sub-tag">Série vs {selectedEvent.opponentTeam} • Formato {selectedEvent.format}</span>
+              </div>
               <button onClick={() => setIsScoreModalOpen(false)} className="close-btn"><X size={18} /></button>
             </div>
 
             <form onSubmit={handleSaveResult} className="teams-form">
+              {/* Placar Geral da Série Calculado Automaticamente */}
               <div className="score-input-container">
                 <div className="team-score-block">
                   <span className="team-name-lbl">Friba Esports</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="5"
-                    className="score-num-input"
-                    value={scoreUs}
-                    onChange={(e) => setScoreUs(parseInt(e.target.value, 10) || 0)}
-                  />
+                  <div className="score-auto-badge us">
+                    {computedScoreUs}
+                  </div>
                 </div>
-                <span className="vs-sign">X</span>
+                <div className="vs-sign-container">
+                  <span className="vs-sign">X</span>
+                  <span className="vs-sub-lbl">Placar da Série ({selectedEvent.format})</span>
+                  <span className="auto-calc-indicator">
+                    ⚡ Automático pelas partidas
+                  </span>
+                </div>
                 <div className="team-score-block">
                   <span className="team-name-lbl">{selectedEvent.opponentTeam}</span>
+                  <div className="score-auto-badge them">
+                    {computedScoreThem}
+                  </div>
+                </div>
+              </div>
+
+              {/* Destaque MVP do Treino */}
+              <div className="form-group">
+                <label className="section-label">
+                  <Crown size={15} color="#FBBF24" /> MVP da Série (Destaque do Treino)
+                </label>
+                <select
+                  value={selectedMvp}
+                  onChange={(e) => setSelectedMvp(e.target.value)}
+                  className="mvp-select"
+                >
+                  <option value="">Selecione o atleta MVP...</option>
+                  {(selectedEvent.lineup || []).map((player, idx) => (
+                    <option key={idx} value={player}>👑 {player}</option>
+                  ))}
+                  {members.map(m => (
+                    <option key={m.id} value={m.name}>👑 {m.name} (@{m.nickname})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Pontuação Aeos Partida a Partida */}
+              <div className="game-breakdown-section">
+                <div className="gb-header">
+                  <label className="section-label">
+                    <Swords size={15} /> Pontos Aeos Partida a Partida
+                  </label>
+                  <button type="button" className="btn-chip-action" onClick={handleAddGameRow}>
+                    <Plus size={12} /> Adicionar Partida
+                  </button>
+                </div>
+
+                <div className="gb-rows-list">
+                  {gameDetails.map((g, idx) => (
+                    <div key={idx} className="gb-row-item">
+                      <span className="gb-game-index">Jogo {g.gameNumber}</span>
+                      <div className="gb-inputs-pair">
+                        <div className="gb-input-sub">
+                          <span>Friba (Pontos)</span>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={g.scoreUs === 0 ? '' : g.scoreUs}
+                            onChange={(e) => handleGameScoreChange(idx, 'scoreUs', e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0)}
+                          />
+                        </div>
+                        <span className="gb-divider">x</span>
+                        <div className="gb-input-sub">
+                          <span>Rival (Pontos)</span>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={g.scoreThem === 0 ? '' : g.scoreThem}
+                            onChange={(e) => handleGameScoreChange(idx, 'scoreThem', e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="gb-outcome-pill">
+                        {(Number(g.scoreUs) || 0) === 0 && (Number(g.scoreThem) || 0) === 0 ? (
+                          <span className="badge-pending">Pendente</span>
+                        ) : (Number(g.scoreUs) || 0) > (Number(g.scoreThem) || 0) ? (
+                          <span className="badge-win">Vitória</span>
+                        ) : (Number(g.scoreUs) || 0) < (Number(g.scoreThem) || 0) ? (
+                          <span className="badge-loss">Derrota</span>
+                        ) : (
+                          <span className="badge-tie">Empate</span>
+                        )}
+                      </div>
+
+                      {gameDetails.length > 1 && (
+                        <button type="button" className="btn-remove-game" onClick={() => handleRemoveGameRow(idx)}>
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Link do VOD */}
+              <div className="form-group">
+                <label>Link do VOD / Gravação da Partida</label>
+                <div className="input-with-icon">
+                  <Tv size={16} />
                   <input
-                    type="number"
-                    min="0"
-                    max="5"
-                    className="score-num-input"
-                    value={scoreThem}
-                    onChange={(e) => setScoreThem(parseInt(e.target.value, 10) || 0)}
+                    type="url"
+                    placeholder="https://twitch.tv/videos/... ou https://youtube.com/watch?v=..."
+                    value={vodUrl}
+                    onChange={(e) => setVodUrl(e.target.value)}
                   />
                 </div>
               </div>
 
+              {/* Feedback e Análise do Coach */}
               <div className="form-group">
-                <label>Link do VOD / Gravação</label>
-                <input
-                  type="url"
-                  placeholder="https://youtube.com/watch?v=..."
-                  value={vodUrl}
-                  onChange={(e) => setVodUrl(e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Resumo / Feedback do Coach</label>
+                <label>Feedback Técnico & Análise do Treino</label>
                 <textarea
                   rows={3}
-                  placeholder="Pontos fortes, erros em teamfights, contestação de Rayquaza..."
+                  placeholder="Pontos fortes observados, falhas em teamfights, contestação de Rayquaza, posicionamento..."
                   value={resultNotes}
                   onChange={(e) => setResultNotes(e.target.value)}
                 />
@@ -745,7 +1417,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                   Cancelar
                 </button>
                 <button type="submit" className="btn-primary">
-                  <Check size={14} /> Salvar & Concluir
+                  <Check size={14} /> Salvar Relatório & Concluir
                 </button>
               </div>
             </form>
@@ -753,7 +1425,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         </div>
       )}
 
-      {/* ESTILOS VISUAIS ESTILO MICROSOFT TEAMS CALENDAR */}
+      {/* ESTILOS VISUAIS PREMIUM MICROSOFT TEAMS + ESPORTS */}
       <style>{`
         .teams-calendar-wrapper {
           max-width: 1240px;
@@ -798,20 +1470,18 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           height: 38px;
           border-radius: 12px;
           background: linear-gradient(135deg, #1d68ff 0%, #0b5fff 100%);
-          color: white;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 4px 16px rgba(11, 95, 255, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.3);
-          border: 1px solid rgba(255, 255, 255, 0.2);
+          color: white;
+          box-shadow: 0 4px 12px rgba(11, 95, 255, 0.4);
         }
 
         .calendar-icon-title h2 {
-          font-size: 1.25rem;
-          font-weight: 800;
-          color: #FFFFFF;
+          font-size: 1.15rem;
+          font-weight: 700;
+          color: #F8FAFC;
           margin: 0;
-          line-height: 1.2;
         }
 
         .teams-sub-desc {
@@ -823,29 +1493,26 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           display: flex;
           align-items: center;
           gap: 10px;
-          background: rgba(15, 23, 42, 0.6);
-          backdrop-filter: blur(16px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          padding: 4px 12px;
-          border-radius: 9999px;
-          box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.2);
+          background: rgba(255, 255, 255, 0.05);
+          padding: 4px 8px;
+          border-radius: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .today-btn {
-          background: rgba(255, 255, 255, 0.08);
-          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.15);
           color: #E2E8F0;
-          font-size: 0.76rem;
+          font-size: 0.75rem;
           font-weight: 600;
-          padding: 4px 12px;
-          border-radius: 9999px;
+          padding: 4px 10px;
+          border-radius: 6px;
           cursor: pointer;
-          transition: all 0.15s;
+          transition: all 0.2s;
         }
 
         .today-btn:hover {
-          background: rgba(255, 255, 255, 0.16);
-          color: white;
+          background: rgba(255, 255, 255, 0.18);
         }
 
         .stepper-arrows {
@@ -856,15 +1523,13 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         .stepper-btn {
           background: transparent;
           border: none;
-          color: #94A3B8;
-          width: 26px;
-          height: 26px;
-          border-radius: 50%;
+          color: #CBD5E1;
+          padding: 4px;
+          border-radius: 4px;
+          cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          cursor: pointer;
-          transition: background 0.15s, color 0.15s;
         }
 
         .stepper-btn:hover {
@@ -873,10 +1538,10 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         }
 
         .current-range-text {
-          font-size: 0.84rem;
-          font-weight: 700;
-          color: #FFFFFF;
-          padding-right: 6px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #F1F5F9;
+          padding-right: 4px;
         }
 
         .teams-view-and-actions {
@@ -889,11 +1554,10 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         .category-pills {
           display: flex;
           gap: 4px;
-          background: rgba(15, 23, 42, 0.6);
-          backdrop-filter: blur(16px);
+          background: rgba(0, 0, 0, 0.35);
           padding: 3px;
-          border-radius: 9999px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .cat-pill {
@@ -902,108 +1566,93 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           color: #94A3B8;
           font-size: 0.72rem;
           font-weight: 600;
-          padding: 5px 12px;
-          border-radius: 9999px;
+          padding: 4px 10px;
+          border-radius: 6px;
           cursor: pointer;
-          transition: all 0.18s;
+          transition: all 0.2s;
         }
 
         .cat-pill.active {
-          background: linear-gradient(180deg, #1d68ff 0%, #0b5fff 100%);
+          background: #0B5FFF;
           color: white;
-          box-shadow: 0 2px 10px rgba(11, 95, 255, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.3);
         }
 
         .teams-view-badge {
           display: flex;
           align-items: center;
           gap: 6px;
-          background: rgba(11, 95, 255, 0.12);
-          border: 1px solid rgba(11, 95, 255, 0.35);
-          color: #93C5FD;
-          font-size: 0.74rem;
-          font-weight: 700;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #94A3B8;
+          background: rgba(255, 255, 255, 0.04);
           padding: 6px 12px;
-          border-radius: 9999px;
-          letter-spacing: 0.02em;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .btn-new-event {
-          background: linear-gradient(180deg, #1d68ff 0%, #0b5fff 100%);
-          color: white;
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          border-radius: 9999px;
-          padding: 8px 18px;
-          font-size: 0.8rem;
-          font-weight: 600;
           display: flex;
           align-items: center;
           gap: 6px;
+          background: linear-gradient(135deg, #0B5FFF 0%, #0047D4 100%);
+          border: none;
+          color: white;
+          font-size: 0.78rem;
+          font-weight: 600;
+          padding: 8px 14px;
+          border-radius: 8px;
           cursor: pointer;
-          box-shadow: 0 4px 16px rgba(11, 95, 255, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.3);
-          transition: all 0.2s ease;
+          box-shadow: 0 4px 14px rgba(11, 95, 255, 0.35);
+          transition: all 0.2s;
         }
 
         .btn-new-event:hover {
-          background: linear-gradient(180deg, #2b74ff 0%, #1565ff 100%);
-          box-shadow: 0 6px 22px rgba(11, 95, 255, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.4);
-          transform: translateY(-1px);
+          filter: brightness(1.1);
         }
 
-        /* ========================================================= */
-        /* VISÃO MÊS */
-        /* ========================================================= */
+        /* VISÃO MENSAL GRID */
         .teams-month-container {
-          background: rgba(10, 16, 32, 0.6);
-          backdrop-filter: blur(24px) saturate(190%);
-          -webkit-backdrop-filter: blur(24px) saturate(190%);
-          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(12, 18, 34, 0.65);
+          backdrop-filter: blur(24px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
           border-radius: 16px;
           overflow: hidden;
-          box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4), inset 0 1px 1.5px rgba(255, 255, 255, 0.15);
+          box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4);
         }
 
         .month-days-header {
           display: grid;
-          grid-template-columns: repeat(7, minmax(0, 1fr));
-          background: rgba(14, 22, 42, 0.65);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-          width: 100%;
-          box-sizing: border-box;
+          grid-template-columns: repeat(7, 1fr);
+          background: rgba(0, 0, 0, 0.3);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .month-header-cell {
-          padding: 10px;
-          text-align: center;
-          font-size: 0.72rem;
+          padding: 10px 12px;
+          font-size: 0.75rem;
           font-weight: 700;
-          color: #94A3B8;
           text-transform: uppercase;
-          min-width: 0;
-          box-sizing: border-box;
+          letter-spacing: 0.05em;
+          color: #94A3B8;
+          text-align: center;
         }
 
         .month-grid {
           display: grid;
-          grid-template-columns: repeat(7, minmax(0, 1fr));
-          width: 100%;
-          box-sizing: border-box;
+          grid-template-columns: repeat(7, 1fr);
+          border-collapse: collapse;
         }
 
         .month-cell {
           min-height: 120px;
+          padding: 8px;
           border-right: 1px solid rgba(255, 255, 255, 0.06);
           border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-          padding: 8px;
           display: flex;
           flex-direction: column;
           gap: 6px;
           cursor: pointer;
-          transition: background 0.12s;
-          background: #080d1a;
-          min-width: 0;
-          overflow: hidden;
-          box-sizing: border-box;
+          transition: background 0.15s;
         }
 
         .month-cell:nth-child(7n) {
@@ -1011,207 +1660,606 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         }
 
         .month-cell:hover {
-          background: rgba(255, 255, 255, 0.025);
+          background: rgba(255, 255, 255, 0.03);
         }
 
         .month-cell.other-month {
-          opacity: 0.28;
-          background: rgba(0, 0, 0, 0.3);
+          opacity: 0.45;
+          background: rgba(0, 0, 0, 0.15);
         }
 
         .month-cell.today-month-cell {
           background: rgba(11, 95, 255, 0.05);
-          box-shadow: inset 0 0 0 1px rgba(11, 95, 255, 0.2);
         }
 
         .month-cell-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 2px;
         }
 
         .month-day-num {
           font-size: 0.8rem;
-          font-weight: 800;
-          color: #64748B;
+          font-weight: 600;
+          color: #94A3B8;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
         }
 
         .month-day-num.today-num {
           background: #0B5FFF;
           color: white;
-          width: 24px;
-          height: 24px;
-          border-radius: 6px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 0.82rem;
-          font-weight: 800;
-          box-shadow: 0 2px 10px rgba(11, 95, 255, 0.6);
+          font-weight: 700;
+          box-shadow: 0 0 10px rgba(11, 95, 255, 0.6);
         }
 
         .month-count {
           font-size: 0.65rem;
-          font-weight: 700;
-          color: #94A3B8;
-          background: rgba(255, 255, 255, 0.06);
-          padding: 1px 5px;
-          border-radius: 9999px;
+          color: #64748B;
+          background: rgba(255, 255, 255, 0.05);
+          padding: 2px 6px;
+          border-radius: 10px;
         }
 
         .month-events-list {
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 5px;
+          flex: 1;
         }
 
-        /* CARD COMPLETO E ROBUSTO NO MÊS */
         .month-event-card {
-          border-left: 3px solid #0B5FFF;
-          border-top: 1px solid rgba(255, 255, 255, 0.08);
-          border-right: 1px solid rgba(255, 255, 255, 0.08);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 8px;
-          padding: 8px 10px;
+          border-left: 3px solid;
+          border: 1px solid;
+          border-left-width: 3px;
+          border-radius: 6px;
+          padding: 5px 7px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
-          cursor: pointer;
-          transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-          box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
-          position: relative;
+          gap: 3px;
+          transition: transform 0.15s;
         }
 
         .month-event-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
-          filter: brightness(1.1);
+          transform: translateY(-1px);
         }
 
         .m-card-top {
           display: flex;
           align-items: center;
-          gap: 6px;
+          justify-content: space-between;
+          gap: 4px;
         }
 
         .m-cat-icon {
           display: flex;
           align-items: center;
-          justify-content: center;
         }
 
         .m-format-tag {
-          font-size: 0.62rem;
-          font-weight: 800;
-          background: rgba(0, 0, 0, 0.45);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          color: #94A3B8;
-          padding: 1px 5px;
-          border-radius: 4px;
-          letter-spacing: 0.03em;
+          font-size: 0.65rem;
+          font-weight: 700;
+          color: #CBD5E1;
         }
 
         .m-time-pill {
-          margin-left: auto;
-          font-size: 0.68rem;
-          font-weight: 700;
-          color: #E2E8F0;
-          background: rgba(255, 255, 255, 0.08);
-          padding: 2px 6px;
-          border-radius: 9999px;
+          font-size: 0.65rem;
+          color: #94A3B8;
           display: flex;
           align-items: center;
-          gap: 3px;
-          font-family: monospace;
+          gap: 2px;
         }
 
         .m-score-badge {
-          margin-left: auto;
-          font-size: 0.68rem;
+          font-size: 0.65rem;
           font-weight: 800;
+          background: rgba(16, 185, 129, 0.2);
           color: #34D399;
-          background: rgba(16, 185, 129, 0.22);
-          border: 1px solid rgba(16, 185, 129, 0.45);
-          padding: 1px 6px;
+          padding: 1px 4px;
           border-radius: 4px;
-          font-family: monospace;
-          box-shadow: 0 1px 6px rgba(16, 185, 129, 0.3);
         }
 
         .m-card-title-row {
-          margin-top: 1px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .m-team-name {
-          font-size: 0.82rem;
-          font-weight: 800;
-          color: #FFFFFF;
-          line-height: 1.25;
-          letter-spacing: -0.01em;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: #F8FAFC;
         }
 
         .m-card-bottom {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-top: 2px;
+          gap: 4px;
         }
 
         .m-tag-pill {
-          font-size: 0.66rem;
+          font-size: 0.62rem;
+          font-weight: 600;
+        }
+
+        .m-attendance-pill {
+          display: flex;
+          align-items: center;
+          gap: 3px;
+          font-size: 0.6rem;
           font-weight: 700;
-          letter-spacing: 0.02em;
+          padding: 1px 5px;
+          border-radius: 4px;
         }
 
-        .m-status-dot-confirmed {
-          font-size: 0.58rem;
+        .m-attendance-pill.all-in {
+          background: rgba(16, 185, 129, 0.2);
+          color: #34D399;
+        }
+
+        .m-attendance-pill.pending {
+          background: rgba(245, 158, 11, 0.2);
+          color: #FBBF24;
+        }
+
+        .m-mvp-pill {
+          display: flex;
+          align-items: center;
+          gap: 3px;
+          font-size: 0.6rem;
           font-weight: 800;
-          color: #38BDF8;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
+          color: #FBBF24;
+          background: rgba(251, 191, 36, 0.15);
+          padding: 1px 5px;
+          border-radius: 4px;
         }
 
-        /* ========================================================= */
-        /* MODAIS E DETALHES */
-        /* ========================================================= */
-        .modal-teams-detail {
-          max-width: 520px;
+        /* MODAIS */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(5, 10, 20, 0.85);
+          backdrop-filter: blur(12px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 16px;
+        }
+
+        .modal-content {
+          background: rgba(14, 21, 38, 0.95);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 16px;
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          max-height: 90vh;
+        }
+
+        .modal-large {
+          max-width: 680px;
           width: 100%;
+        }
+
+        .modal-teams-detail {
+          max-width: 640px;
+          width: 100%;
+        }
+
+        .modal-header {
+          padding: 18px 22px;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgba(255, 255, 255, 0.02);
         }
 
         .modal-header-tag {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 12px;
         }
 
         .cat-indicator {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
+          width: 14px;
+          height: 14px;
+          border-radius: 4px;
+        }
+
+        .modal-header h3 {
+          font-size: 1.15rem;
+          font-weight: 700;
+          color: #F8FAFC;
+          margin: 0;
+        }
+
+        .modal-sub-tag {
+          font-size: 0.72rem;
+          color: #94A3B8;
+        }
+
+        .close-btn {
+          background: transparent;
+          border: none;
+          color: #94A3B8;
+          cursor: pointer;
+          padding: 4px;
+          border-radius: 6px;
+        }
+
+        .close-btn:hover {
+          color: white;
+          background: rgba(255, 255, 255, 0.1);
         }
 
         .detail-body {
+          padding: 20px 22px;
           display: flex;
           flex-direction: column;
-          gap: 14px;
-          margin-top: 14px;
+          gap: 16px;
+          overflow-y: auto;
         }
 
+        /* POST-MATCH CARD */
+        .postmatch-card {
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(11, 95, 255, 0.08) 100%);
+          border: 1px solid rgba(16, 185, 129, 0.35);
+          border-radius: 12px;
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .pm-header-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        .pm-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.75rem;
+          font-weight: 800;
+          padding: 4px 10px;
+          border-radius: 6px;
+          letter-spacing: 0.05em;
+        }
+
+        .pm-badge.win {
+          background: rgba(16, 185, 129, 0.25);
+          color: #34D399;
+          border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .pm-badge.defeat {
+          background: rgba(239, 68, 68, 0.25);
+          color: #F87171;
+          border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .pm-format-desc {
+          font-size: 0.72rem;
+          color: #94A3B8;
+          margin-left: 8px;
+        }
+
+        .pm-score-huge {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 1.3rem;
+          font-weight: 800;
+        }
+
+        .pm-us {
+          color: #34D399;
+        }
+
+        .pm-x {
+          color: #64748B;
+          font-size: 1rem;
+        }
+
+        .pm-them {
+          color: #CBD5E1;
+        }
+
+        .pm-mvp-box {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: rgba(251, 191, 36, 0.12);
+          border: 1px solid rgba(251, 191, 36, 0.3);
+          padding: 8px 12px;
+          border-radius: 8px;
+        }
+
+        .pm-crown-badge {
+          color: #FBBF24;
+          display: flex;
+          align-items: center;
+        }
+
+        .pm-mvp-text {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.8rem;
+        }
+
+        .pm-mvp-lbl {
+          color: #FDE68A;
+          font-weight: 600;
+        }
+
+        .pm-mvp-name {
+          color: white;
+          font-size: 0.88rem;
+        }
+
+        .pm-games-breakdown {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .pm-breakdown-title {
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: #94A3B8;
+          text-transform: uppercase;
+        }
+
+        .pm-games-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .pm-game-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: rgba(0, 0, 0, 0.25);
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+        }
+
+        .g-num {
+          font-weight: 600;
+          color: #CBD5E1;
+        }
+
+        .g-scores {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: 700;
+        }
+
+        .g-score-us {
+          color: #34D399;
+        }
+
+        .g-vs {
+          color: #64748B;
+        }
+
+        .g-score-them {
+          color: #E2E8F0;
+        }
+
+        .g-res.win {
+          color: #34D399;
+          font-weight: 700;
+        }
+
+        .g-res.loss {
+          color: #F87171;
+          font-weight: 700;
+        }
+
+        .pm-vod-action-row {
+          margin-top: 4px;
+        }
+
+        .btn-vod-action {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%);
+          color: white;
+          font-size: 0.78rem;
+          font-weight: 700;
+          padding: 8px 14px;
+          border-radius: 8px;
+          text-decoration: none;
+          box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
+        }
+
+        .pm-edit-btn-row {
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        .btn-text-secondary {
+          background: transparent;
+          border: none;
+          color: #94A3B8;
+          font-size: 0.75rem;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          cursor: pointer;
+        }
+
+        .btn-text-secondary:hover {
+          color: white;
+        }
+
+        /* CARD DE PRESENÇA DO USUÁRIO LOGADO */
+        .my-attendance-card {
+          background: rgba(11, 95, 255, 0.08);
+          border: 1px solid rgba(11, 95, 255, 0.25);
+          border-radius: 12px;
+          padding: 14px 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .attendance-prompt-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .at-title-group {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .at-title-group h4 {
+          font-size: 0.88rem;
+          font-weight: 700;
+          color: #F8FAFC;
+          margin: 0;
+        }
+
+        .at-sub {
+          font-size: 0.7rem;
+          color: #94A3B8;
+        }
+
+        .attendance-buttons-row {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .btn-rsvp {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          padding: 8px 12px;
+          border-radius: 8px;
+          border: 1px solid transparent;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .btn-rsvp.confirm {
+          background: rgba(16, 185, 129, 0.15);
+          color: #34D399;
+          border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-rsvp.confirm:hover, .btn-rsvp.confirm.active {
+          background: #10B981;
+          color: white;
+        }
+
+        .btn-rsvp.late {
+          background: rgba(245, 158, 11, 0.15);
+          color: #FBBF24;
+          border-color: rgba(245, 158, 11, 0.3);
+        }
+
+        .btn-rsvp.late:hover, .btn-rsvp.late.active {
+          background: #F59E0B;
+          color: white;
+        }
+
+        .btn-rsvp.absent {
+          background: rgba(239, 68, 68, 0.15);
+          color: #F87171;
+          border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-rsvp.absent:hover, .btn-rsvp.absent.active {
+          background: #EF4444;
+          color: white;
+        }
+
+        .attendance-note-prompt {
+          background: rgba(0, 0, 0, 0.3);
+          padding: 10px 12px;
+          border-radius: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .attendance-note-prompt label {
+          font-size: 0.72rem;
+          color: #CBD5E1;
+        }
+
+        .prompt-input-row {
+          display: flex;
+          gap: 6px;
+        }
+
+        .prompt-input-row input {
+          flex: 1;
+          background: #0B1424;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          color: white;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-size: 0.78rem;
+        }
+
+        .btn-primary-small {
+          background: #0B5FFF;
+          border: none;
+          color: white;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .btn-secondary-small {
+          background: transparent;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          color: #94A3B8;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          cursor: pointer;
+        }
+
+        /* METADADOS GERAIS */
         .detail-meta-grid {
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
           gap: 10px;
-          background: rgba(0, 0, 0, 0.25);
-          padding: 12px;
-          border-radius: 8px;
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          background: rgba(255, 255, 255, 0.03);
+          padding: 12px 14px;
+          border-radius: 10px;
         }
 
         .meta-item {
@@ -1220,66 +2268,31 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           gap: 2px;
         }
 
-        .meta-item .label, .detail-field .label {
+        .meta-item .label {
           font-size: 0.68rem;
-          font-weight: 700;
-          color: #64748B;
+          color: #94A3B8;
           text-transform: uppercase;
         }
 
         .meta-item .val {
-          font-size: 0.84rem;
-          font-weight: 700;
-          color: #E2E8F0;
-        }
-
-        .detail-field {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .val-inline {
-          font-size: 0.82rem;
-          color: #94A3B8;
-        }
-
-        .lineup-chips {
-          display: flex;
-          gap: 6px;
-          flex-wrap: wrap;
-        }
-
-        .lineup-chip {
-          font-size: 0.72rem;
-          background: rgba(11, 95, 255, 0.12);
-          border: 1px solid rgba(11, 95, 255, 0.3);
-          color: #93C5FD;
-          padding: 3px 8px;
-          border-radius: 6px;
+          font-size: 0.78rem;
           font-weight: 600;
-        }
-
-        .status-field-box {
-          flex-direction: row;
-          justify-content: space-between;
-          align-items: center;
-          background: rgba(255, 255, 255, 0.03);
-          padding: 10px 14px;
-          border-radius: 8px;
+          color: #F1F5F9;
         }
 
         .status-badge-inline {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
           font-size: 0.72rem;
           font-weight: 700;
           padding: 2px 8px;
           border-radius: 4px;
-          margin-left: 8px;
         }
 
         .status-badge-inline.confirmado {
-          background: rgba(56, 189, 248, 0.15);
-          color: #38BDF8;
+          background: rgba(16, 185, 129, 0.15);
+          color: #34D399;
         }
 
         .status-badge-inline.agendado {
@@ -1288,20 +2301,188 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         }
 
         .status-badge-inline.concluído {
+          background: rgba(56, 189, 248, 0.15);
+          color: #38BDF8;
+        }
+
+        .status-badge-inline.ausente {
+          background: rgba(239, 68, 68, 0.15);
+          color: #F87171;
+        }
+
+        .status-badge-inline.pendente {
+          background: rgba(148, 163, 184, 0.15);
+          color: #94A3B8;
+        }
+
+        /* LISTA DE PRESENÇA (ATLETAS NA LINEUP) */
+        .attendance-roster-box {
+          background: rgba(0, 0, 0, 0.25);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 10px;
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .lineup-header-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .lineup-header-row .label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: #E2E8F0;
+        }
+
+        .count-pill {
+          font-size: 0.68rem;
+          font-weight: 600;
+          background: rgba(11, 95, 255, 0.15);
+          color: #60A5FA;
+          padding: 2px 8px;
+          border-radius: 6px;
+        }
+
+        .attendance-players-list {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .att-player-card {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 8px;
+          padding: 6px 10px;
+        }
+
+        .att-player-card.confirmado {
+          border-left: 3px solid #10B981;
+        }
+
+        .att-player-card.atraso {
+          border-left: 3px solid #F59E0B;
+        }
+
+        .att-player-card.ausente {
+          border-left: 3px solid #EF4444;
+        }
+
+        .att-player-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .att-player-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          object-fit: cover;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .att-name-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .att-player-name {
+          font-size: 0.8rem;
+          color: #F8FAFC;
+        }
+
+        .att-player-nick {
+          font-size: 0.72rem;
+          color: #94A3B8;
+        }
+
+        .att-player-lane {
+          font-size: 0.65rem;
+          background: rgba(11, 95, 255, 0.15);
+          color: #93C5FD;
+          padding: 1px 6px;
+          border-radius: 4px;
+        }
+
+        .att-note-bubble {
+          display: block;
+          font-size: 0.68rem;
+          color: #FBBF24;
+          margin-top: 1px;
+        }
+
+        .att-player-right {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .att-status-pill {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 0.7rem;
+          font-weight: 700;
+          padding: 2px 8px;
+          border-radius: 4px;
+        }
+
+        .att-status-pill.confirmado {
           background: rgba(16, 185, 129, 0.15);
           color: #34D399;
         }
 
-        .score-summary {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 0.82rem;
-          color: #94A3B8;
+        .att-status-pill.atraso {
+          background: rgba(245, 158, 11, 0.15);
+          color: #FBBF24;
         }
 
-        .score-display strong {
+        .att-status-pill.ausente {
+          background: rgba(239, 68, 68, 0.15);
+          color: #F87171;
+        }
+
+        .staff-quick-rsvp-actions {
+          display: flex;
+          gap: 3px;
+        }
+
+        .quick-btn-icon {
+          width: 20px;
+          height: 20px;
+          border-radius: 4px;
+          border: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+
+        .quick-btn-icon.check {
+          background: rgba(16, 185, 129, 0.2);
           color: #34D399;
+        }
+
+        .quick-btn-icon.warn {
+          background: rgba(245, 158, 11, 0.2);
+          color: #FBBF24;
+        }
+
+        .quick-btn-icon.cross {
+          background: rgba(239, 68, 68, 0.2);
+          color: #F87171;
         }
 
         .detail-notes-box {
@@ -1317,31 +2498,13 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           margin: 4px 0 0;
         }
 
-        .vod-container {
-          margin-top: 4px;
-        }
-
-        .btn-vod-action {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 0.8rem;
-          font-weight: 600;
-          background: #8B5CF6;
-          color: white;
-          padding: 8px 14px;
-          border-radius: 6px;
-          text-decoration: none;
-        }
-
-        .btn-vod-action:hover {
-          background: #7C3AED;
-        }
-
         .detail-footer {
+          padding: 14px 22px;
           display: flex;
           justify-content: space-between;
           align-items: center;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgba(0, 0, 0, 0.2);
         }
 
         .footer-right-actions {
@@ -1366,17 +2529,37 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           background: rgba(239, 68, 68, 0.15);
         }
 
-        /* FORMS */
-        .modal-teams-form {
-          max-width: 540px;
-          width: 100%;
+        .btn-primary {
+          background: #0B5FFF;
+          border: none;
+          color: white;
+          font-size: 0.78rem;
+          font-weight: 600;
+          padding: 8px 14px;
+          border-radius: 6px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
         }
 
+        .btn-secondary {
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          color: #E2E8F0;
+          font-size: 0.78rem;
+          padding: 8px 14px;
+          border-radius: 6px;
+          cursor: pointer;
+        }
+
+        /* FORMULÁRIO DE NOVO COMPROMISSO */
         .teams-form {
+          padding: 18px 22px;
           display: flex;
           flex-direction: column;
-          gap: 12px;
-          margin-top: 14px;
+          gap: 14px;
+          overflow-y: auto;
         }
 
         .form-row-2 {
@@ -1391,14 +2574,255 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           gap: 10px;
         }
 
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+        }
+
+        .form-group label {
+          font-size: 0.74rem;
+          font-weight: 600;
+          color: #CBD5E1;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+          background: #0B1424;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 8px;
+          color: white;
+          padding: 8px 10px;
+          font-size: 0.8rem;
+        }
+
+        /* SELEÇÃO DE LINEUP NO FORM */
+        .lineup-selection-section {
+          background: rgba(0, 0, 0, 0.25);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 12px;
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .lineup-selection-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .section-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.82rem;
+          font-weight: 700;
+          color: #F8FAFC;
+        }
+
+        .lineup-hint {
+          font-size: 0.68rem;
+          color: #94A3B8;
+        }
+
+        .lineup-quick-actions {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .lineup-counter-badge {
+          font-size: 0.72rem;
+          font-weight: 800;
+          padding: 3px 8px;
+          border-radius: 6px;
+        }
+
+        .lineup-counter-badge.good {
+          background: rgba(16, 185, 129, 0.2);
+          color: #34D399;
+          border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .lineup-counter-badge.warning {
+          background: rgba(245, 158, 11, 0.2);
+          color: #FBBF24;
+          border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+
+        .btn-chip-action {
+          background: rgba(11, 95, 255, 0.15);
+          border: 1px solid rgba(11, 95, 255, 0.3);
+          color: #93C5FD;
+          font-size: 0.7rem;
+          font-weight: 600;
+          padding: 3px 8px;
+          border-radius: 6px;
+          cursor: pointer;
+        }
+
+        .btn-chip-action:hover {
+          background: #0B5FFF;
+          color: white;
+        }
+
+        .btn-chip-action.text-muted {
+          background: rgba(255, 255, 255, 0.05);
+          border-color: rgba(255, 255, 255, 0.1);
+          color: #94A3B8;
+        }
+
+        .members-picker-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 8px;
+          max-height: 200px;
+          overflow-y: auto;
+          padding-right: 4px;
+        }
+
+        .member-pick-card {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 8px;
+          padding: 6px 8px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+
+        .member-pick-card:hover {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: rgba(255, 255, 255, 0.18);
+        }
+
+        .member-pick-card.selected {
+          background: rgba(11, 95, 255, 0.15);
+          border-color: #0B5FFF;
+        }
+
+        .pick-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          object-fit: cover;
+        }
+
+        .pick-info {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .pick-name {
+          font-size: 0.74rem;
+          color: #F8FAFC;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .pick-nick {
+          font-size: 0.65rem;
+          color: #94A3B8;
+        }
+
+        .pick-tags {
+          display: flex;
+          gap: 4px;
+          margin-top: 2px;
+        }
+
+        .pick-role-pill {
+          font-size: 0.58rem;
+          font-weight: 700;
+          padding: 1px 4px;
+          border-radius: 3px;
+        }
+
+        .pick-role-pill.titular {
+          background: rgba(16, 185, 129, 0.2);
+          color: #34D399;
+        }
+
+        .pick-role-pill.reserva {
+          background: rgba(148, 163, 184, 0.2);
+          color: #CBD5E1;
+        }
+
+        .pick-lane-pill {
+          font-size: 0.58rem;
+          background: rgba(11, 95, 255, 0.15);
+          color: #93C5FD;
+          padding: 1px 4px;
+          border-radius: 3px;
+        }
+
+        .pick-check-circle {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+        }
+
+        .member-pick-card.selected .pick-check-circle {
+          background: #0B5FFF;
+          border-color: #0B5FFF;
+        }
+
+        .custom-player-add-row {
+          display: flex;
+          gap: 6px;
+        }
+
+        .custom-player-add-row input {
+          flex: 1;
+          background: #0B1424;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          color: white;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+        }
+
+        .btn-add-custom-p {
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          color: #CBD5E1;
+          font-size: 0.72rem;
+          padding: 6px 10px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          cursor: pointer;
+        }
+
+        .btn-add-custom-p:hover {
+          background: rgba(255, 255, 255, 0.15);
+          color: white;
+        }
+
+        /* SCORE & GAME BREAKDOWN MODAL */
         .score-input-container {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 16px;
-          background: rgba(0, 0, 0, 0.25);
+          gap: 20px;
+          background: rgba(0, 0, 0, 0.35);
           padding: 16px;
-          border-radius: 10px;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .team-score-block {
@@ -1414,22 +2838,211 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           color: #E2E8F0;
         }
 
-        .score-num-input {
-          width: 60px;
-          height: 50px;
-          font-size: 1.8rem;
-          font-weight: 800;
+        .score-auto-badge {
+          width: 68px;
+          height: 56px;
+          font-size: 2.2rem;
+          font-weight: 900;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 12px;
+          background: #080D1A;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+          transition: all 0.2s ease;
+        }
+
+        .score-auto-badge.us {
+          border: 2px solid #10B981;
+          color: #34D399;
+          box-shadow: 0 0 16px rgba(16, 185, 129, 0.25);
+        }
+
+        .score-auto-badge.them {
+          border: 2px solid #64748B;
+          color: #F8FAFC;
+        }
+
+        .auto-calc-indicator {
+          font-size: 0.62rem;
+          font-weight: 600;
+          color: #38BDF8;
+          background: rgba(56, 189, 248, 0.12);
+          border: 1px solid rgba(56, 189, 248, 0.25);
+          padding: 2px 8px;
+          border-radius: 6px;
+          margin-top: 4px;
           text-align: center;
-          background: #0B1424;
-          border: 2px solid #0B5FFF;
-          border-radius: 8px;
-          color: white;
+        }
+
+        .vs-sign-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
         }
 
         .vs-sign {
-          font-size: 1.1rem;
+          font-size: 1.2rem;
           font-weight: 800;
           color: #64748B;
+        }
+
+        .vs-sub-lbl {
+          font-size: 0.65rem;
+          color: #94A3B8;
+        }
+
+        .mvp-select {
+          background: #0B1424;
+          border: 1px solid rgba(251, 191, 36, 0.4);
+          color: #FDE68A;
+          font-weight: 600;
+        }
+
+        .game-breakdown-section {
+          background: rgba(0, 0, 0, 0.25);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 10px;
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .gb-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .gb-rows-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .gb-row-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          padding: 8px 12px;
+          border-radius: 8px;
+        }
+
+        .gb-game-index {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: #CBD5E1;
+          width: 50px;
+        }
+
+        .gb-inputs-pair {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex: 1;
+        }
+
+        .gb-input-sub {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          flex: 1;
+        }
+
+        .gb-input-sub span {
+          font-size: 0.62rem;
+          color: #94A3B8;
+        }
+
+        .gb-input-sub input {
+          background: #0B1424;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 6px;
+          font-size: 0.8rem;
+          font-weight: 700;
+        }
+
+        .gb-divider {
+          color: #64748B;
+          font-size: 0.8rem;
+          font-weight: 700;
+          margin-top: 14px;
+        }
+
+        .gb-outcome-pill {
+          width: 70px;
+          text-align: center;
+        }
+
+        .badge-win {
+          font-size: 0.68rem;
+          font-weight: 800;
+          background: rgba(16, 185, 129, 0.2);
+          color: #34D399;
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+
+        .badge-loss {
+          font-size: 0.68rem;
+          font-weight: 800;
+          background: rgba(239, 68, 68, 0.2);
+          color: #F87171;
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+
+        .badge-pending {
+          font-size: 0.68rem;
+          font-weight: 700;
+          background: rgba(148, 163, 184, 0.15);
+          color: #94A3B8;
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+
+        .badge-tie {
+          font-size: 0.68rem;
+          font-weight: 700;
+          background: rgba(245, 158, 11, 0.15);
+          color: #FBBF24;
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+
+        .btn-remove-game {
+          background: transparent;
+          border: none;
+          color: #EF4444;
+          cursor: pointer;
+          padding: 4px;
+        }
+
+        .input-with-icon {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          background: #0B1424;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 8px;
+          padding: 0 10px;
+        }
+
+        .input-with-icon svg {
+          color: #94A3B8;
+        }
+
+        .input-with-icon input {
+          border: none;
+          background: transparent;
+          padding: 8px 0;
+          width: 100%;
         }
 
         @media (max-width: 768px) {
@@ -1440,11 +3053,15 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           .teams-nav-controls, .teams-view-and-actions {
             justify-content: space-between;
           }
-          .week-header-row, .grid-hour-row {
-            grid-template-columns: 50px repeat(7, 1fr);
+          .month-days-header, .month-grid {
+            font-size: 0.65rem;
           }
           .form-row-2, .form-row-3 {
             grid-template-columns: 1fr;
+          }
+          .gb-row-item {
+            flex-direction: column;
+            align-items: stretch;
           }
         }
       `}</style>
