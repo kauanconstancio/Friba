@@ -11,13 +11,18 @@ import {
   Check,
   GripHorizontal,
   Shield,
-  Layers
+  Layers,
+  Copy,
+  Send,
+  Sparkles
 } from 'lucide-react';
-import type { Role, TeamMember, Lane, PokemonRole } from '../../types';
+import type { Role, TeamMember, Lane, PokemonRole, AppUser } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
+import { dbCreateInvite } from '../../services/supabase';
 
 interface RosterManagementProps {
   currentRole: Role;
+  currentUser?: AppUser | null;
   members: TeamMember[];
   onAddMember: (member: TeamMember) => void;
   onUpdateMember: (member: TeamMember) => void;
@@ -26,6 +31,7 @@ interface RosterManagementProps {
 
 export const RosterManagement: React.FC<RosterManagementProps> = ({
   currentRole,
+  currentUser,
   members,
   onAddMember,
   onUpdateMember,
@@ -34,6 +40,16 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+
+  // Estados do Modal de Convidar Membro
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteName, setInviteName] = useState('');
+  const [inviteRole, setInviteRole] = useState<Role>('Jogador');
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
+  const [generatedInvite, setGeneratedInvite] = useState<{ code: string; link: string } | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   const [formData, setFormData] = useState<Partial<TeamMember>>({
     name: '',
@@ -73,23 +89,48 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
     };
   }, [members, search]);
 
-  const handleOpenAdd = (status: 'Titular' | 'Reserva' = 'Titular') => {
-    setSelectedMember(null);
-    setFormData({
-      name: '',
-      nickname: '',
-      tag: '@DU · ',
-      role: 'Jogador',
-      avatar: '',
-      discord: '',
-      inGameId: '',
-      gameRole: 'All-Rounder',
-      preferredLane: 'Jungle',
-      status: status,
-      mainPokemon: ['ceruledge'],
-      coachNotes: ''
-    });
-    setIsModalOpen(true);
+  const handleCreateInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+
+    setIsCreatingInvite(true);
+    try {
+      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const code = `FRB-${randomSuffix}`;
+
+      await dbCreateInvite({
+        email: inviteEmail.trim(),
+        name: inviteName.trim() || undefined,
+        role: inviteRole,
+        status: 'Pendente',
+        invitedBy: currentUser?.id || 'dono',
+        invitedByName: currentUser?.name ? `${currentUser.nickname || currentUser.name} (${currentUser.role})` : 'Dono da Equipe',
+        inviteCode: code,
+      });
+
+      const inviteLink = `${window.location.origin}?code=${code}`;
+      setGeneratedInvite({ code, link: inviteLink });
+      setInviteEmail('');
+      setInviteName('');
+    } catch (err: any) {
+      alert(`Erro ao gerar convite: ${err.message || 'Tente novamente.'}`);
+    } finally {
+      setIsCreatingInvite(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (!generatedInvite) return;
+    navigator.clipboard.writeText(generatedInvite.link);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const handleCopyCode = () => {
+    if (!generatedInvite) return;
+    navigator.clipboard.writeText(generatedInvite.code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
   };
 
   const handleOpenEdit = (m: TeamMember) => {
@@ -174,8 +215,16 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           </div>
 
           {canEdit && (
-            <button className="add-member-btn" onClick={() => handleOpenAdd('Titular')}>
-              <UserPlus size={15} /> Adicionar Membro
+            <button 
+              type="button"
+              className="add-member-btn" 
+              onClick={() => {
+                setGeneratedInvite(null);
+                setIsInviteModalOpen(true);
+              }}
+              title="Gerar convite oficial para novo membro se juntar à equipe"
+            >
+              <UserPlus size={15} /> Convidar Membro
             </button>
           )}
         </div>
@@ -195,23 +244,45 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           <div className="section-count-badge">{starters.length}</div>
         </div>
 
-        <div className="roster-cards-grid">
-          {starters.map((member) => {
-            const initial = member.name ? member.name.charAt(0).toUpperCase() : 'F';
-            const mainPokeId = member.mainPokemon?.[0];
-            const mainPoke = getPokemonInfo(mainPokeId);
-            const pokeBg = getPokemonBg(mainPoke?.name || mainPokeId, mainPoke?.role);
+        {starters.length === 0 ? (
+          <div className="empty-roster-state">
+            <Swords size={28} color="rgba(255, 255, 255, 0.25)" />
+            <p className="empty-roster-text">Nenhum jogador titular cadastrado ainda.</p>
+            <span className="empty-roster-sub">
+              Os jogadores aparecerão aqui automaticamente após aceitarem o convite da equipe e preencherem suas informações.
+            </span>
+          </div>
+        ) : (
+          <div className="roster-cards-grid">
+            {starters.map((member) => {
+              const displayName = member.name || member.nickname;
+              const displayNick = member.nickname || member.name;
+              const initial = displayName ? displayName.charAt(0).toUpperCase() : 'F';
+              const mainPokeId = member.mainPokemon?.[0];
+              const mainPoke = getPokemonInfo(mainPokeId);
+              const pokeBg = getPokemonBg(mainPoke?.name || mainPokeId, mainPoke?.role);
 
             return (
               <div key={member.id} className="player-card">
                 {/* Header do Card */}
                 <div className="card-top-row">
-                  <div className="avatar-initial-box">
-                    {initial}
-                  </div>
+                  {member.avatar ? (
+                    <img 
+                      src={member.avatar} 
+                      alt={displayName} 
+                      className="avatar-initial-box avatar-img-box"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="avatar-initial-box">
+                      {initial}
+                    </div>
+                  )}
                   <div className="player-meta">
-                    <h3 className="player-name">{member.name}</h3>
-                    <div className="player-tag">{member.tag || `@${member.nickname}`}</div>
+                    <h3 className="player-name">{displayName}</h3>
+                    <div className="player-tag">@{displayNick}</div>
                   </div>
 
                   <div className="card-options-area">
@@ -280,6 +351,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
             );
           })}
         </div>
+      )}
       </div>
 
       {/* SEÇÃO 2: RESERVAS */}
@@ -296,23 +368,45 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           <div className="section-count-badge">{reserves.length}</div>
         </div>
 
-        <div className="roster-cards-grid">
-          {reserves.map((member) => {
-            const initial = member.name ? member.name.charAt(0).toUpperCase() : 'M';
-            const mainPokeId = member.mainPokemon?.[0];
-            const mainPoke = getPokemonInfo(mainPokeId);
-            const pokeBg = getPokemonBg(mainPoke?.name || mainPokeId, mainPoke?.role);
+        {reserves.length === 0 ? (
+          <div className="empty-roster-state">
+            <ClipboardList size={28} color="rgba(255, 255, 255, 0.25)" />
+            <p className="empty-roster-text">Nenhum jogador reserva cadastrado no momento.</p>
+            <span className="empty-roster-sub">
+              Jogadores que forem cadastrados na equipe com status reserva serão exibidos aqui.
+            </span>
+          </div>
+        ) : (
+          <div className="roster-cards-grid">
+            {reserves.map((member) => {
+              const displayName = member.name || member.nickname;
+              const displayNick = member.nickname || member.name;
+              const initial = displayName ? displayName.charAt(0).toUpperCase() : 'M';
+              const mainPokeId = member.mainPokemon?.[0];
+              const mainPoke = getPokemonInfo(mainPokeId);
+              const pokeBg = getPokemonBg(mainPoke?.name || mainPokeId, mainPoke?.role);
 
             return (
               <div key={member.id} className="player-card">
                 {/* Header do Card */}
                 <div className="card-top-row">
-                  <div className="avatar-initial-box">
-                    {initial}
-                  </div>
+                  {member.avatar ? (
+                    <img 
+                      src={member.avatar} 
+                      alt={displayName} 
+                      className="avatar-initial-box avatar-img-box"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="avatar-initial-box">
+                      {initial}
+                    </div>
+                  )}
                   <div className="player-meta">
-                    <h3 className="player-name">{member.name}</h3>
-                    <div className="player-tag">{member.tag || `@${member.nickname}`}</div>
+                    <h3 className="player-name">{displayName}</h3>
+                    <div className="player-tag">@{displayNick}</div>
                   </div>
 
                   <div className="card-options-area">
@@ -383,6 +477,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
             );
           })}
         </div>
+      )}
       </div>
 
       {/* SEÇÃO 3: COMISSÃO TÉCNICA & GESTÃO */}
@@ -402,17 +497,30 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
 
           <div className="roster-cards-grid">
             {staff.map((member) => {
-              const initial = member.name ? member.name.charAt(0).toUpperCase() : 'S';
+              const displayName = member.name || member.nickname;
+              const displayNick = member.nickname || member.name;
+              const initial = displayName ? displayName.charAt(0).toUpperCase() : 'S';
 
               return (
                 <div key={member.id} className="player-card staff-card">
                   <div className="card-top-row">
-                    <div className="avatar-initial-box staff-initial">
-                      {initial}
-                    </div>
+                    {member.avatar ? (
+                      <img 
+                        src={member.avatar} 
+                        alt={displayName} 
+                        className="avatar-initial-box avatar-img-box staff-initial"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="avatar-initial-box staff-initial">
+                        {initial}
+                      </div>
+                    )}
                     <div className="player-meta">
-                      <h3 className="player-name">{member.name}</h3>
-                      <div className="player-tag">{member.tag || `@${member.nickname}`}</div>
+                      <h3 className="player-name">{displayName}</h3>
+                      <div className="player-tag">@{displayNick}</div>
                     </div>
 
                     <div className="card-options-area">
@@ -457,6 +565,217 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
         </div>
       )}
 
+      {/* MODAL CONVIDAR MEMBRO */}
+      {isInviteModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsInviteModalOpen(false)}>
+          <div className="modal-content modal-custom-roster" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="m-title-icon">
+                <Send size={18} color="#0B5FFF" />
+                <h3>Convidar Novo Membro</h3>
+              </div>
+              <button onClick={() => setIsInviteModalOpen(false)} className="close-btn">
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: '#94A3B8', marginTop: '8px' }}>
+              Envie um convite oficial. Ao aceitar o convite, o integrante preencherá suas informações competitivas (Nickname, UID, Pokémon favorito, Lane) e aparecerá automaticamente no Roster.
+            </p>
+
+            {!generatedInvite ? (
+              <form onSubmit={handleCreateInviteSubmit} className="custom-roster-form">
+                <div className="form-group">
+                  <label>E-mail do Membro *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="ex: jogador@email.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-row-2">
+                  <div className="form-group">
+                    <label>Nome / Identificação (Opcional)</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Matheus Lima"
+                      value={inviteName}
+                      onChange={(e) => setInviteName(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Cargo Atribuído</label>
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as Role)}
+                    >
+                      <option value="Jogador">Jogador</option>
+                      <option value="Coach">Coach</option>
+                      <option value="Manager">Manager</option>
+                      <option value="Dono">Dono</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ marginTop: '16px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsInviteModalOpen(false)}
+                    className="cancel-btn"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isCreatingInvite}
+                    className="save-btn"
+                    style={{
+                      background: 'linear-gradient(135deg, #0B5FFF 0%, #D61F26 100%)',
+                      border: 'none',
+                      color: 'white',
+                      fontWeight: 700,
+                      padding: '10px 20px',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <Send size={15} />
+                    {isCreatingInvite ? 'Gerando...' : 'Gerar Convite'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  <Sparkles size={20} color="#10B981" />
+                  <div>
+                    <h4 style={{ color: '#6EE7B7', fontSize: '0.88rem', margin: 0 }}>Convite gerado com sucesso!</h4>
+                    <span style={{ color: '#A7F3D0', fontSize: '0.75rem' }}>
+                      Envie o link ou código abaixo para o membro completar seu cadastro oficial.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Link Direto de Cadastro</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={generatedInvite.link}
+                      style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: '#38BDF8', fontSize: '0.82rem' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyLink}
+                      style={{
+                        background: copiedLink ? '#10B981' : '#0B5FFF',
+                        border: 'none',
+                        color: 'white',
+                        padding: '0 14px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                      {copiedLink ? 'Copiado!' : 'Copiar'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Código do Convite</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={generatedInvite.code}
+                      style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: '#F59E0B', fontWeight: 700, letterSpacing: '1px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyCode}
+                      style={{
+                        background: copiedCode ? '#10B981' : 'rgba(255,255,255,0.1)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        color: 'white',
+                        padding: '0 14px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      {copiedCode ? <Check size={14} /> : <Copy size={14} />}
+                      {copiedCode ? 'Copiado!' : 'Copiar'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGeneratedInvite(null);
+                      setIsInviteModalOpen(false);
+                    }}
+                    style={{
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      color: 'white',
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem'
+                    }}
+                  >
+                    Concluir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGeneratedInvite(null)}
+                    style={{
+                      background: '#0B5FFF',
+                      border: 'none',
+                      color: 'white',
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    Criar Outro Convite
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* MODAL ADICIONAR / EDITAR MEMBRO */}
       {isModalOpen && (
         <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
@@ -484,12 +803,13 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                   />
                 </div>
                 <div className="form-group">
-                  <label>Tag / In-Game Tag</label>
+                  <label>Nickname / Gamertag *</label>
                   <input
                     type="text"
-                    placeholder="Ex: @DU · NKYY!"
-                    value={formData.tag || ''}
-                    onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
+                    required
+                    placeholder="Ex: Nkyy!"
+                    value={formData.nickname || ''}
+                    onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
                   />
                 </div>
               </div>
@@ -863,6 +1183,18 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           box-shadow: 0 2px 8px rgba(11, 95, 255, 0.35);
         }
 
+        .avatar-initial-box.avatar-img-box {
+          padding: 0;
+          object-fit: cover;
+          border: 2px solid #D61F26;
+          box-shadow: 0 2px 8px rgba(214, 31, 38, 0.35);
+        }
+
+        .avatar-initial-box.avatar-img-box.staff-initial {
+          border-color: #0B5FFF;
+          box-shadow: 0 2px 8px rgba(11, 95, 255, 0.35);
+        }
+
         .player-meta {
           flex: 1;
           display: flex;
@@ -1050,6 +1382,33 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           letter-spacing: 0.04em;
         }
 
+        .empty-roster-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 40px 24px;
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px dashed rgba(255, 255, 255, 0.1);
+          border-radius: 14px;
+          gap: 8px;
+          margin-top: 10px;
+        }
+
+        .empty-roster-text {
+          font-size: 0.92rem;
+          font-weight: 700;
+          color: #E2E8F0;
+          margin: 0;
+        }
+
+        .empty-roster-sub {
+          font-size: 0.76rem;
+          color: #64748B;
+          max-width: 480px;
+        }
+
         /* MODAL STYLES */
         .modal-custom-roster {
           max-width: 520px;
@@ -1069,10 +1428,28 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           margin-top: 16px;
         }
 
-        .form-row-2 {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
+        .custom-roster-form input,
+        .custom-roster-form select {
+          width: 100%;
+          background: #0B111E;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #F8FAFC;
+          padding: 9px 12px;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          outline: none;
+          transition: all 0.2s ease;
+        }
+
+        .custom-roster-form input:focus,
+        .custom-roster-form select:focus {
+          border-color: #38BDF8;
+          box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+        }
+
+        .custom-roster-form select option {
+          background-color: #0F172A;
+          color: #F8FAFC;
         }
 
         @media (max-width: 480px) {
