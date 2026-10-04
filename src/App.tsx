@@ -93,12 +93,20 @@ export function App() {
     dbFetchAnnouncements().then(data => { if (data && data.length) setAnnouncements(data); });
   }, []);
 
-  // 2. Detectar código de convite via URL (?code=XYZ ou ?join=XYZ)
+  // 2. Detectar código de convite via URL (?code=XYZ, ?join=XYZ, ?invite=XYZ ou rotas /join/XYZ, /invite/XYZ)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const codeParam = params.get('code') || params.get('join');
-    if (codeParam) {
-      setInviteCodeFromUrl(codeParam);
+    let code = params.get('code') || params.get('join') || params.get('invite');
+
+    if (!code) {
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      if (pathParts.length >= 2 && ['join', 'invite', 'convite'].includes(pathParts[0].toLowerCase())) {
+        code = pathParts[1];
+      }
+    }
+
+    if (code) {
+      setInviteCodeFromUrl(code.toUpperCase().trim());
       setIsInviteModalOpen(true);
     }
   }, []);

@@ -93,7 +93,7 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
         inviteCode: code,
       });
 
-      const inviteLink = `${window.location.origin}/join?code=${code}&role=${inviteRole}`;
+      const inviteLink = `${window.location.origin}/?code=${code}&role=${inviteRole}`;
       setGeneratedInviteLink(inviteLink);
       setInvites(prev => [newInvite, ...prev]);
       setInviteEmail('');
@@ -519,7 +519,7 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            const link = `${window.location.origin}/join?code=${inv.inviteCode}&role=${inv.role}`;
+                            const link = `${window.location.origin}/?code=${inv.inviteCode}&role=${inv.role}`;
                             handleCopy(link, `link-${inv.id}`);
                           }}
                           className="btn-action-icon"
