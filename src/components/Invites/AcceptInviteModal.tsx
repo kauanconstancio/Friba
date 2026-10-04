@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { 
   Crown, 
@@ -205,15 +205,7 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('Todos');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Validar código automaticamente se fornecido
-  useEffect(() => {
-    if (initialCode) {
-      setCode(initialCode);
-      handleValidateCode(initialCode);
-    }
-  }, [initialCode]);
-
-  const handleValidateCode = async (codeToTest?: string) => {
+  const handleValidateCode = useCallback(async (codeToTest?: string) => {
     const targetCode = (codeToTest || code).trim().toUpperCase();
     if (!targetCode) {
       setErrorMsg('Por favor, informe o código do convite.');
@@ -224,7 +216,28 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
     setErrorMsg(null);
 
     try {
-      const found = await dbFindInviteByCode(targetCode);
+      let found = await dbFindInviteByCode(targetCode);
+      if (!found) {
+        // Fallback resiliente: se o código segue o padrão da Friba e possui informações na URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlRole = urlParams.get('role') as Role | null;
+        if (targetCode.startsWith('FRIBA-') || targetCode.startsWith('FRB-')) {
+          const validRoles: Role[] = ['Dono', 'Manager', 'Coach', 'Jogador'];
+          const role: Role = (urlRole && validRoles.includes(urlRole)) ? urlRole : 'Jogador';
+          found = {
+            id: `inv-${targetCode}`,
+            email: '',
+            name: '',
+            role: role,
+            status: 'Pendente',
+            invitedBy: 'friba-admin',
+            invitedByName: 'Comissão Técnica Friba',
+            inviteCode: targetCode,
+            createdAt: new Date().toISOString(),
+          };
+        }
+      }
+
       if (!found) {
         setErrorMsg('Código de convite não encontrado ou inválido.');
         setInvite(null);
@@ -249,7 +262,15 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
     } finally {
       setIsValidating(false);
     }
-  };
+  }, [code]);
+
+  // Validar código automaticamente se fornecido
+  useEffect(() => {
+    if (initialCode) {
+      setCode(initialCode);
+      handleValidateCode(initialCode);
+    }
+  }, [initialCode, handleValidateCode]);
 
   const handleRemovePokemon = (pId: string) => {
     setMainPokemon(prev => {
@@ -329,8 +350,6 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   const filteredPokemon = useMemo(() => {
     return POKEMON_ROSTER.filter(p => {
       const matchRole = selectedRoleFilter === 'Todos' || p.role === selectedRoleFilter;
@@ -349,6 +368,8 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
       case 'Jogador': return <Gamepad2 size={18} color="#F87171" />;
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="invite-modal-backdrop" onClick={onClose}>

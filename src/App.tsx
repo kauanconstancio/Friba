@@ -82,8 +82,27 @@ export function App() {
   });
 
   // Modal de Aceitar Convite / Cadastro de Jogador
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
-  const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState('');
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code') || params.get('join') || params.get('invite');
+    if (code) return true;
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    return pathParts.length >= 2 && ['join', 'invite', 'convite'].includes(pathParts[0].toLowerCase());
+  });
+
+  const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const params = new URLSearchParams(window.location.search);
+    let code = params.get('code') || params.get('join') || params.get('invite');
+    if (!code) {
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      if (pathParts.length >= 2 && ['join', 'invite', 'convite'].includes(pathParts[0].toLowerCase())) {
+        code = pathParts[1];
+      }
+    }
+    return code ? code.toUpperCase().trim() : '';
+  });
 
   // 1. Carregar dados de todas as tabelas do Supabase
   useEffect(() => {
