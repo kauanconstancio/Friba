@@ -12,10 +12,11 @@ import {
   X,
   Check
 } from 'lucide-react';
-import type { Role, TeamMember, ScrimEvent, TeamAnnouncement } from '../../types';
+import type { Role, TeamMember, ScrimEvent, TeamAnnouncement, AppUser } from '../../types';
 
 interface DashboardProps {
   currentRole: Role;
+  currentUser?: AppUser | null;
   members: TeamMember[];
   scrims: ScrimEvent[];
   announcements: TeamAnnouncement[];
@@ -27,6 +28,7 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({
   currentRole,
+  currentUser: _currentUser,
   members,
   scrims,
   announcements,
@@ -58,7 +60,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Cálculos de KPIs
   const completed = scrims.filter(s => s.status === 'Concluído');
   const won = completed.filter(s => s.score && s.score.us > s.score.them).length;
-  const winRate = completed.length > 0 ? Math.round((won / completed.length) * 100) : 67;
+  const winRate = completed.length > 0 ? Math.round((won / completed.length) * 100) : 0;
 
   const starters = members.filter(m => m.role === 'Jogador' && m.status === 'Titular');
   const staff = members.filter(m => m.role !== 'Jogador');
@@ -77,6 +79,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
     e.preventDefault();
     if (!newEventTitle) return;
 
+    const teamLineup = starters.length > 0 
+      ? starters.map(s => s.name) 
+      : members.filter(m => m.role === 'Jogador').map(m => m.name);
+
     onAddScrim({
       id: `scrim-${Date.now()}`,
       opponentTeam: newEventTitle,
@@ -86,7 +92,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       format: newEventFormat,
       status: 'Confirmado',
       category: newEventType,
-      lineup: ['Aegis', 'Shadow', 'Hyper', 'Healer', 'Titan']
+      lineup: teamLineup.length > 0 ? teamLineup : ['Titulares Friba']
     });
 
     setIsNewEventModalOpen(false);
@@ -149,8 +155,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="metric-box glass-panel">
           <div className="m-icon win"><Trophy size={20} /></div>
           <div>
-            <div className="m-val">{winRate}%</div>
-            <div className="m-lbl">Aproveitamento em Scrims ({won}/{completed.length || 1})</div>
+            <div className="m-val">{completed.length > 0 ? `${winRate}%` : '—'}</div>
+            <div className="m-lbl">
+              {completed.length > 0 ? `Aproveitamento em Scrims (${won}/${completed.length})` : 'Nenhum treino concluído'}
+            </div>
           </div>
         </div>
 

@@ -2,6 +2,33 @@ export type Role = 'Dono' | 'Manager' | 'Coach' | 'Jogador';
 export type PokemonRole = 'Attacker' | 'Speedster' | 'All-Rounder' | 'Defender' | 'Supporter';
 export type Lane = 'Top' | 'Jungle' | 'Bot' | 'Flex' | 'Mid' | 'Top Lane' | 'Bot Lane' | 'Support';
 
+export interface AppUser {
+  id: string;
+  email: string;
+  password?: string;
+  name: string;
+  nickname: string;
+  role: Role;
+  avatar: string;
+  discord?: string;
+  inGameId?: string;
+  isOwner?: boolean;
+  createdAt: string;
+}
+
+export interface TeamInvite {
+  id: string;
+  email: string;
+  name?: string;
+  role: Role;
+  status: 'Pendente' | 'Aceito' | 'Cancelado';
+  invitedBy: string;
+  invitedByName: string;
+  inviteCode: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
 export interface TeamMember {
   id: string;
   name: string;
@@ -19,6 +46,8 @@ export interface TeamMember {
   // Campo simples para Staff
   specialtyOrTitle?: string;
   coachNotes?: string;
+  email?: string;
+  userId?: string;
 }
 
 export interface PokemonData {
@@ -57,6 +86,23 @@ export interface TacticalElement {
   pokemonSprite?: string;
   team?: 'blue' | 'orange';
   fontSize?: number;
+  width?: number;
+  memberId?: string;
+  memberName?: string;
+  memberNickname?: string;
+  memberAvatar?: string;
+  memberLane?: string;
+  memberRole?: string;
+}
+
+export interface TeamNotification {
+  id: string;
+  title: string;
+  message: string;
+  category: 'Treino' | 'Mural' | 'Equipe' | 'Sistema';
+  date: string;
+  read: boolean;
+  linkTab?: string;
 }
 
 export interface StrategyPlan {
@@ -76,6 +122,23 @@ export interface TeamAnnouncement {
   priority?: 'Normal' | 'Alta';
 }
 
+export interface ScrimAttendance {
+  memberId: string;
+  memberName: string;
+  memberNickname?: string;
+  status: 'Confirmado' | 'Atraso' | 'Ausente';
+  note?: string;
+  updatedAt?: string;
+}
+
+export interface ScrimGameDetail {
+  gameNumber: number;
+  scoreUs: number;
+  scoreThem: number;
+  mvpMemberName?: string;
+  notes?: string;
+}
+
 export interface ScrimEvent {
   id: string;
   opponentTeam: string;
@@ -92,4 +155,7 @@ export interface ScrimEvent {
   score?: { us: number; them: number };
   vodUrl?: string;
   notes?: string;
+  attendance?: ScrimAttendance[];
+  games?: ScrimGameDetail[];
+  mvpMemberName?: string;
 }
