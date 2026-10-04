@@ -1,18 +1,18 @@
-import React, { useState } from 'react';
-import { 
-  Lock, 
-  Mail, 
-  Eye, 
-  EyeOff, 
-  ArrowRight, 
-  ShieldCheck, 
-  Crown, 
+import React, { useState } from "react";
+import {
+  Lock,
+  Mail,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  ShieldCheck,
+  Crown,
   AlertCircle,
   Ticket,
-  Sparkles
-} from 'lucide-react';
-import type { AppUser } from '../../types';
-import { authLogin, DEFAULT_OWNER_USER } from '../../services/supabase';
+  Sparkles,
+} from "lucide-react";
+import type { AppUser } from "../../types";
+import { authLogin, DEFAULT_OWNER_USER } from "../../services/supabase";
 
 interface LoginPageProps {
   onLoginSuccess: (user: AppUser) => void;
@@ -23,24 +23,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   onLoginSuccess,
   onOpenInviteModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'login' | 'invite'>('login');
-  
+  const [activeTab, setActiveTab] = useState<"login" | "invite">("login");
+
   // Login form state
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Invite code state
-  const [inviteCodeInput, setInviteCodeInput] = useState('');
+  const [inviteCodeInput, setInviteCodeInput] = useState("");
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     if (!email.trim() || !password.trim()) {
-      setErrorMessage('Por favor, preencha todos os campos.');
+      setErrorMessage("Por favor, preencha todos os campos.");
       return;
     }
 
@@ -50,10 +50,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       if (result.success && result.user) {
         onLoginSuccess(result.user);
       } else {
-        setErrorMessage(result.error || 'Credenciais inválidas. Verifique seu e-mail e senha.');
+        setErrorMessage(
+          result.error ||
+            "Credenciais inválidas. Verifique seu e-mail e senha.",
+        );
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Erro inesperado ao realizar login.');
+      setErrorMessage(err.message || "Erro inesperado ao realizar login.");
     } finally {
       setIsLoading(false);
     }
@@ -61,14 +64,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const handleQuickFillOwner = () => {
     setEmail(DEFAULT_OWNER_USER.email);
-    setPassword(DEFAULT_OWNER_USER.password || 'Kmc@130606');
+    setPassword(DEFAULT_OWNER_USER.password || "Kmc@130606");
     setErrorMessage(null);
   };
 
   const handleInviteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteCodeInput.trim()) {
-      setErrorMessage('Informe o código de convite da equipe.');
+      setErrorMessage("Informe o código de convite da equipe.");
       return;
     }
     onOpenInviteModal(inviteCodeInput.trim().toUpperCase());
@@ -83,7 +86,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         {/* Cabeçalho da Marca Friba */}
         <div className="login-brand-header">
           <div className="login-logo-wrapper">
-            <img src="/friba-logo.png" alt="Friba Esports" className="login-logo-img" />
+            <img
+              src="/friba-logo.png"
+              alt="Friba Esports"
+              className="login-logo-img"
+            />
             <div className="login-logo-pulse" />
           </div>
           <h1 className="login-brand-title">
@@ -98,9 +105,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         <div className="login-tabs-nav">
           <button
             type="button"
-            className={`login-tab-btn ${activeTab === 'login' ? 'active' : ''}`}
+            className={`login-tab-btn ${activeTab === "login" ? "active" : ""}`}
             onClick={() => {
-              setActiveTab('login');
+              setActiveTab("login");
               setErrorMessage(null);
             }}
           >
@@ -110,9 +117,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
           <button
             type="button"
-            className={`login-tab-btn ${activeTab === 'invite' ? 'active' : ''}`}
+            className={`login-tab-btn ${activeTab === "invite" ? "active" : ""}`}
             onClick={() => {
-              setActiveTab('invite');
+              setActiveTab("invite");
               setErrorMessage(null);
             }}
           >
@@ -130,7 +137,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         )}
 
         {/* Formulário de Login */}
-        {activeTab === 'login' && (
+        {activeTab === "login" && (
           <form onSubmit={handleLoginSubmit} className="login-form">
             <div className="login-input-group">
               <label htmlFor="login-email">E-mail de Acesso</label>
@@ -141,7 +148,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="kauanconstancio13@gmail.com"
+                  placeholder="seuemail@gmail.com"
                   autoComplete="email"
                   required
                 />
@@ -156,7 +163,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 <Lock size={18} className="login-input-icon" />
                 <input
                   id="login-password"
-                  type={showPassword ? 'text' : 'password'}
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••"
@@ -167,7 +174,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   type="button"
                   className="login-toggle-password-btn"
                   onClick={() => setShowPassword(!showPassword)}
-                  title={showPassword ? 'Ocultar senha' : 'Exibir senha'}
+                  title={showPassword ? "Ocultar senha" : "Exibir senha"}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -206,7 +213,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 </button>
               </div>
               <div className="login-quick-details">
-                <span className="login-quick-user">{DEFAULT_OWNER_USER.email}</span>
+                <span className="login-quick-user">
+                  {DEFAULT_OWNER_USER.email}
+                </span>
                 <span className="login-quick-role">Cargo: Dono da Equipe</span>
               </div>
             </div>
@@ -214,12 +223,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         )}
 
         {/* Aba: Resgatar Convite */}
-        {activeTab === 'invite' && (
+        {activeTab === "invite" && (
           <form onSubmit={handleInviteSubmit} className="login-form">
             <div className="login-invite-info">
               <Sparkles size={18} color="#38BDF8" />
               <p>
-                Foi convidado pela gestão da <strong>Friba Esports</strong>? Digite seu código de convite para cadastrar seu perfil oficial.
+                Foi convidado pela gestão da <strong>Friba Esports</strong>?
+                Digite seu código de convite para cadastrar seu perfil oficial.
               </p>
             </div>
 
@@ -231,18 +241,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   id="invite-code"
                   type="text"
                   value={inviteCodeInput}
-                  onChange={(e) => setInviteCodeInput(e.target.value.toUpperCase())}
+                  onChange={(e) =>
+                    setInviteCodeInput(e.target.value.toUpperCase())
+                  }
                   placeholder="EX: FRB-9X4K2P"
                   autoFocus
                 />
               </div>
-              <span className="login-input-hint">Código de 6 a 12 caracteres gerado pelo Dono.</span>
+              <span className="login-input-hint">
+                Código de 6 a 12 caracteres gerado pelo Dono.
+              </span>
             </div>
 
-            <button
-              type="submit"
-              className="login-submit-btn"
-            >
+            <button type="submit" className="login-submit-btn">
               <Ticket size={18} />
               <span>Validar e Cadastrar Perfil</span>
               <ArrowRight size={16} />
@@ -252,9 +263,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
         {/* Rodapé da Tela de Login */}
         <div className="login-card-footer">
-          <p>
-            Sistema Friba Esports • Pokémon Unite Competitive Suite
-          </p>
+          <p>Sistema Friba Esports • Pokémon Unite Competitive Suite</p>
         </div>
       </div>
     </div>
