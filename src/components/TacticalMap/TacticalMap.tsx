@@ -1,90 +1,127 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { 
+import React, { useRef, useState, useEffect, useMemo } from "react";
+import {
   MousePointer,
-  Pencil, 
-  ArrowUpRight, 
+  Pencil,
+  ArrowUpRight,
   Minus,
   Type,
   Eraser,
   Hand,
-  RotateCcw, 
-  Trash2, 
-  Download, 
-  ZoomIn, 
-  ZoomOut, 
+  RotateCcw,
+  Trash2,
+  Download,
+  ZoomIn,
+  ZoomOut,
   Maximize2,
   Search,
   X,
   Move,
   Bookmark,
-  Check
-} from 'lucide-react';
-import type { TacticalElement, StrategyPlan, PokemonRole } from '../../types';
-import { POKEMON_ROSTER } from '../../data/pokemonData';
-import { fetchUniteDbPokemons } from '../../services/uniteDbService';
-import { getPokemonRoleStyle } from '../../utils/pokemonStyles';
+  Check,
+  Users,
+  Shield,
+  Sparkles,
+} from "lucide-react";
+import type { TacticalElement, StrategyPlan, PokemonRole, TeamMember } from "../../types";
+import { POKEMON_ROSTER } from "../../data/pokemonData";
+import { fetchUniteDbPokemons } from "../../services/uniteDbService";
+import { getPokemonRoleStyle } from "../../utils/pokemonStyles";
 
 const THEIA_MAP = {
-  id: 'theia-sky-ruins',
-  name: 'Ruínas Celestes de Theia',
-  subname: 'Rayquaza',
-  format: '5v5 Competitivo',
-  image: '/maps/theia-sky-ruins.png',
-  description: 'Ruínas Celestes de Theia - Mapa oficial de torneios e ranqueadas com Rayquaza.'
+  id: "theia-sky-ruins",
+  name: "Ruínas Celestes de Theia",
+  subname: "Rayquaza",
+  format: "5v5 Competitivo",
+  image: "/maps/theia-sky-ruins.png",
+  description:
+    "Ruínas Celestes de Theia - Mapa oficial de torneios e ranqueadas com Rayquaza.",
 };
 
 interface TacticalMapProps {
   presets?: StrategyPlan[];
   onSaveStrategy?: (strategy: StrategyPlan) => void;
+  members?: TeamMember[];
 }
 
-type ToolType = 'select' | 'draw' | 'arrow' | 'line' | 'text' | 'eraser' | 'pan';
+type ToolType =
+  | "select"
+  | "draw"
+  | "arrow"
+  | "line"
+  | "text"
+  | "eraser"
+  | "pan";
 
 export const TacticalMap: React.FC<TacticalMapProps> = ({
   presets = [],
-  onSaveStrategy
+  onSaveStrategy,
+  members = [],
 }) => {
+  const [deckTab, setDeckTab] = useState<"members" | "pokemons">("members");
   const [pokemons, setPokemons] = useState(POKEMON_ROSTER);
-  const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('TODOS');
-  const [teamToAdd, setTeamToAdd] = useState<'blue' | 'orange'>('blue');
-  
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("TODOS");
+  const [teamToAdd] = useState<"blue" | "orange">("blue");
+
   // Ferramentas & Estilos
-  const [activeTool, setActiveTool] = useState<ToolType>('select');
-  const [activeColor, setActiveColor] = useState<string>('#0B5FFF');
+  const [activeTool, setActiveTool] = useState<ToolType>("select");
+  const [activeColor, setActiveColor] = useState<string>("#0B5FFF");
+  const [strokeWidth, setStrokeWidth] = useState<number>(4);
+  const [dragOverMap, setDragOverMap] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(100);
-  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
   const [isPanning, setIsPanning] = useState(false);
   const [isWheelZooming, setIsWheelZooming] = useState(false);
   const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [panStart, setPanStart] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
-  
+
   // Elementos da prancheta
   const [elements, setElements] = useState<TacticalElement[]>([]);
   const [history, setHistory] = useState<TacticalElement[][]>([]);
-  
+
   // Estados de Desenho e Referências do Viewport / Mapa
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [currentStroke, setCurrentStroke] = useState<{ x: number; y: number }[]>([]);
-  const [dragStartPoint, setDragStartPoint] = useState<{ x: number; y: number } | null>(null);
-  
-  // Dragging de Token existente no mapa
+  const [currentStroke, setCurrentStroke] = useState<
+    { x: number; y: number }[]
+  >([]);
+  const [dragStartPoint, setDragStartPoint] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Dragging e Interação de Token existente no mapa (1 clique muda de time, 2 cliques exclui)
   const [draggedTokenId, setDraggedTokenId] = useState<string | null>(null);
+  const tokenMouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const tokenDraggedRef = useRef<boolean>(false);
+  const tokenClickTimerRef = useRef<{
+    [key: string]: ReturnType<typeof setTimeout>;
+  }>({});
 
   // Input de Texto no Mapa
-  const [textModal, setTextModal] = useState<{ open: boolean; x: number; y: number; text: string }>({
+  const [textModal, setTextModal] = useState<{
+    open: boolean;
+    x: number;
+    y: number;
+    text: string;
+  }>({
     open: false,
     x: 0,
     y: 0,
-    text: ''
+    text: "",
   });
 
   // Salvar Tática
-  const [stratTitle, setStratTitle] = useState('');
+  const [stratTitle, setStratTitle] = useState("");
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
   // Resetar zoom e centralizar o mapa
@@ -95,7 +132,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
 
   // Sincronizar pokémons com a API do unite-db
   useEffect(() => {
-    fetchUniteDbPokemons().then(data => {
+    fetchUniteDbPokemons().then((data) => {
       if (data && data.length > 0) {
         setPokemons(data);
       }
@@ -106,16 +143,16 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
 
-      if (e.code === 'Space' && !e.repeat) {
+      if (e.code === "Space" && !e.repeat) {
         e.preventDefault();
         setIsSpacePressed(true);
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+      if (e.code === "Space") {
         setIsSpacePressed(false);
         setIsPanning(false);
       }
@@ -126,13 +163,13 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
       setDraggedTokenId(null);
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("mouseup", handleGlobalMouseUp);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
     };
   }, []);
 
@@ -156,9 +193,9 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
       // Passo de zoom consistente: 15% para rolagem tradicional de roda, 10% para suave
       const step = Math.abs(e.deltaY) >= 50 ? 15 : 10;
 
-      setZoom(prevZoom => {
-        const nextZoom = isZoomIn 
-          ? Math.min(300, prevZoom + step) 
+      setZoom((prevZoom) => {
+        const nextZoom = isZoomIn
+          ? Math.min(300, prevZoom + step)
           : Math.max(50, prevZoom - step);
 
         if (nextZoom === prevZoom) return prevZoom;
@@ -173,18 +210,18 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
         const mouseY = e.clientY - (rect.top + rect.height / 2);
 
         const ratio = nextZoom / prevZoom;
-        setPanOffset(prevPan => ({
+        setPanOffset((prevPan) => ({
           x: Math.round(mouseX - (mouseX - prevPan.x) * ratio),
-          y: Math.round(mouseY - (mouseY - prevPan.y) * ratio)
+          y: Math.round(mouseY - (mouseY - prevPan.y) * ratio),
         }));
 
         return nextZoom;
       });
     };
 
-    el.addEventListener('wheel', handleWheel, { passive: false });
+    el.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
-      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener("wheel", handleWheel);
       if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
     };
   }, []);
@@ -197,28 +234,33 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   // Filtragem Otimizada com useMemo para evitar re-computações desnecessárias durante o desenho
   const filteredPokemons = useMemo(() => {
     const s = search.toLowerCase();
-    return pokemons.filter(p => {
+    return pokemons.filter((p) => {
       const matchesSearch = p.name.toLowerCase().includes(s);
-      if (roleFilter === 'TODOS') return matchesSearch;
-      if (roleFilter === 'ATACANTE') return matchesSearch && p.role === 'Attacker';
-      if (roleFilter === 'VELOZ') return matchesSearch && p.role === 'Speedster';
-      if (roleFilter === 'VERSÁTIL') return matchesSearch && p.role === 'All-Rounder';
-      if (roleFilter === 'DEFENSOR') return matchesSearch && p.role === 'Defender';
-      if (roleFilter === 'SUPORTE') return matchesSearch && p.role === 'Supporter';
+      if (roleFilter === "TODOS") return matchesSearch;
+      if (roleFilter === "ATACANTE")
+        return matchesSearch && p.role === "Attacker";
+      if (roleFilter === "VELOZ")
+        return matchesSearch && p.role === "Speedster";
+      if (roleFilter === "VERSÁTIL")
+        return matchesSearch && p.role === "All-Rounder";
+      if (roleFilter === "DEFENSOR")
+        return matchesSearch && p.role === "Defender";
+      if (roleFilter === "SUPORTE")
+        return matchesSearch && p.role === "Supporter";
       return matchesSearch;
     });
   }, [pokemons, search, roleFilter]);
 
   // Salvar estado no histórico para Desfazer (Undo)
   const pushHistory = () => {
-    setHistory(prev => [...prev.slice(-15), elements]);
+    setHistory((prev) => [...prev.slice(-15), elements]);
   };
 
   const handleUndo = () => {
     if (history.length > 0) {
       const prev = history[history.length - 1];
       setElements(prev);
-      setHistory(old => old.slice(0, -1));
+      setHistory((old) => old.slice(0, -1));
     }
   };
 
@@ -228,111 +270,325 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     setElements([]);
   };
 
-  // Adicionar Pokémon ao mapa
-  const handleAddPokemonToMap = (pokemon: typeof pokemons[0], x = 50, y = 50) => {
+  // Adicionar Pokémon avulso ao mapa
+  const handleAddPokemonToMap = (
+    pokemon: (typeof pokemons)[0],
+    x = 50,
+    y = 50,
+  ) => {
     pushHistory();
     const newElement: TacticalElement = {
       id: `token-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      type: 'token',
+      type: "token",
       x,
       y,
       pokemonId: pokemon.id,
       pokemonName: pokemon.name,
       pokemonSprite: pokemon.sprite,
-      team: teamToAdd
+      team: teamToAdd,
     };
-    setElements(prev => [...prev, newElement]);
+    setElements((prev) => [...prev, newElement]);
+  };
+
+  // Adicionar Atleta do Elenco ao Mapa
+  const handleAddMemberToMap = (
+    member: TeamMember,
+    x = 48,
+    y = 48,
+    overridePokemon?: (typeof pokemons)[0]
+  ) => {
+    pushHistory();
+    const preferredName = member.mainPokemon?.[0];
+    const matchedPoke = overridePokemon || 
+      (preferredName ? pokemons.find(p => p.name.toLowerCase() === preferredName.toLowerCase() || p.id.toLowerCase() === preferredName.toLowerCase()) : null) ||
+      pokemons[0];
+
+    const newElement: TacticalElement = {
+      id: `token-member-${member.id}-${Date.now()}`,
+      type: "token",
+      x,
+      y,
+      pokemonId: matchedPoke?.id || "charizard",
+      pokemonName: matchedPoke?.name || "Charizard",
+      pokemonSprite: matchedPoke?.sprite || "https://unite.pokemon.com/images/pokemon/charizard/roster/roster-charizard.png",
+      team: "blue",
+      memberId: member.id,
+      memberName: member.name,
+      memberNickname: member.nickname,
+      memberAvatar: member.avatar,
+      memberLane: member.preferredLane,
+      memberRole: member.gameRole || member.role
+    };
+    setElements((prev) => [...prev, newElement]);
+  };
+
+  // Auto-Escalar os 5 Titulares nas Rotas Oficiais de Theia
+  const handleAutoDeployStarters = () => {
+    const starters = members.filter(m => m.role === 'Jogador' && m.status === 'Titular');
+    const lineupToDeploy = starters.length > 0 ? starters.slice(0, 5) : members.slice(0, 5);
+    if (lineupToDeploy.length === 0) return;
+
+    pushHistory();
+    // Posições competitivas padrão no mapa Ruínas Celestes de Theia
+    const defaultPositions = [
+      { x: 22, y: 25, lane: 'Top' },     // Top Lane
+      { x: 38, y: 50, lane: 'Jungle' },  // Jungle / Buff Central
+      { x: 22, y: 75, lane: 'Bot' },     // Bot Lane Carregador
+      { x: 30, y: 80, lane: 'Support' }, // Bot Lane Suporte
+      { x: 45, y: 50, lane: 'Mid' }      // Mid / Entrada de Rayquaza
+    ];
+
+    const deployedTokens: TacticalElement[] = lineupToDeploy.map((member, idx) => {
+      const pos = defaultPositions[idx] || { x: 30 + idx * 5, y: 50 };
+      const preferredName = member.mainPokemon?.[0];
+      const matchedPoke = (preferredName ? pokemons.find(p => p.name.toLowerCase() === preferredName.toLowerCase() || p.id.toLowerCase() === preferredName.toLowerCase()) : null) || pokemons[idx % pokemons.length];
+
+      return {
+        id: `token-member-${member.id}-${Date.now()}-${idx}`,
+        type: "token",
+        x: pos.x,
+        y: pos.y,
+        pokemonId: matchedPoke?.id || "charizard",
+        pokemonName: matchedPoke?.name || "Charizard",
+        pokemonSprite: matchedPoke?.sprite || "",
+        team: "blue",
+        memberId: member.id,
+        memberName: member.name,
+        memberNickname: member.nickname,
+        memberAvatar: member.avatar,
+        memberLane: member.preferredLane || pos.lane,
+        memberRole: member.gameRole || member.role
+      };
+    });
+
+    setElements(prev => [...prev, ...deployedTokens]);
+  };
+
+  // Drag and Drop de Jogador
+  const handleDragStartFromMember = (
+    e: React.DragEvent,
+    member: TeamMember,
+    overridePokemon?: (typeof pokemons)[0]
+  ) => {
+    const preferredName = member.mainPokemon?.[0];
+    const matchedPoke = overridePokemon || 
+      (preferredName ? pokemons.find(p => p.name.toLowerCase() === preferredName.toLowerCase() || p.id.toLowerCase() === preferredName.toLowerCase()) : null) ||
+      pokemons[0];
+
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({
+        pokemon: matchedPoke,
+        member,
+        team: "blue"
+      })
+    );
   };
 
   // Drag and Drop de Pokémon a partir da barra lateral
-  const handleDragStartFromSidebar = (e: React.DragEvent, pokemon: typeof pokemons[0]) => {
-    e.dataTransfer.setData('application/json', JSON.stringify({
-      pokemon,
-      team: teamToAdd
-    }));
+  const handleDragStartFromSidebar = (
+    e: React.DragEvent,
+    pokemon: (typeof pokemons)[0],
+  ) => {
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({
+        pokemon,
+        team: teamToAdd,
+      }),
+    );
   };
 
   const handleDropOnMap = (e: React.DragEvent) => {
     e.preventDefault();
-    const dataStr = e.dataTransfer.getData('application/json');
+    setDragOverMap(false);
+    const dataStr = e.dataTransfer.getData("application/json");
     if (!dataStr) return;
 
     try {
-      const { pokemon, team } = JSON.parse(dataStr);
+      const data = JSON.parse(dataStr);
+      const { pokemon, member, team } = data;
       const mapRect = mapContainerRef.current?.getBoundingClientRect();
       if (!mapRect) return;
 
-      const xPercent = Math.max(2, Math.min(95, ((e.clientX - mapRect.left) / (mapRect.width)) * 100));
-      const yPercent = Math.max(4, Math.min(94, ((e.clientY - mapRect.top) / (mapRect.height)) * 100));
+      const xPercent = Math.max(
+        2,
+        Math.min(95, ((e.clientX - mapRect.left) / mapRect.width) * 100),
+      );
+      const yPercent = Math.max(
+        4,
+        Math.min(94, ((e.clientY - mapRect.top) / mapRect.height) * 100),
+      );
 
       pushHistory();
       const newElement: TacticalElement = {
         id: `token-${Date.now()}`,
-        type: 'token',
+        type: "token",
         x: xPercent,
         y: yPercent,
-        pokemonId: pokemon.id,
-        pokemonName: pokemon.name,
-        pokemonSprite: pokemon.sprite,
-        team: team || teamToAdd
+        pokemonId: pokemon?.id,
+        pokemonName: pokemon?.name,
+        pokemonSprite: pokemon?.sprite,
+        team: team || teamToAdd,
+        memberId: member?.id,
+        memberName: member?.name,
+        memberNickname: member?.nickname,
+        memberAvatar: member?.avatar,
+        memberLane: member?.preferredLane,
+        memberRole: member?.gameRole || member?.role
       };
-      setElements(prev => [...prev, newElement]);
+      setElements((prev) => [...prev, newElement]);
     } catch (_) {}
   };
 
   const handleDragOverMap = (e: React.DragEvent) => {
     e.preventDefault();
+    if (!dragOverMap) {
+      setDragOverMap(true);
+    }
   };
+
+  const handleDragLeaveMap = (e: React.DragEvent) => {
+    if (e.currentTarget === e.target) {
+      setDragOverMap(false);
+    }
+  };
+
+  // Window-level tracking para arrasto de tokens sem perdas de movimento fora da tela
+  useEffect(() => {
+    if (!draggedTokenId) return;
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const mapRect = mapContainerRef.current?.getBoundingClientRect();
+      if (!mapRect) return;
+
+      if (tokenMouseDownPosRef.current) {
+        const dist = Math.hypot(
+          e.clientX - tokenMouseDownPosRef.current.x,
+          e.clientY - tokenMouseDownPosRef.current.y,
+        );
+        if (dist > 3) {
+          tokenDraggedRef.current = true;
+        }
+      }
+
+      const xPercent = Math.max(
+        2,
+        Math.min(98, ((e.clientX - mapRect.left) / mapRect.width) * 100),
+      );
+      const yPercent = Math.max(
+        3,
+        Math.min(97, ((e.clientY - mapRect.top) / mapRect.height) * 100),
+      );
+
+      setElements((prev) =>
+        prev.map((el) =>
+          el.id === draggedTokenId ? { ...el, x: xPercent, y: yPercent } : el,
+        ),
+      );
+    };
+
+    const handleWindowMouseUp = () => {
+      if (tokenDraggedRef.current) {
+        pushHistory();
+      }
+      setDraggedTokenId(null);
+    };
+
+    window.addEventListener("mousemove", handleWindowMouseMove);
+    window.addEventListener("mouseup", handleWindowMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleWindowMouseMove);
+      window.removeEventListener("mouseup", handleWindowMouseUp);
+    };
+  }, [draggedTokenId]);
 
   // Mover Token existente no mapa
   const handleTokenMouseDown = (e: React.MouseEvent, elId: string) => {
-    if (e.button === 1 || isSpacePressed || activeTool === 'pan') {
+    if (e.button === 1 || isSpacePressed || activeTool === "pan") {
       return;
     }
 
-    if (activeTool === 'eraser') {
+    if (activeTool === "eraser") {
       pushHistory();
-      setElements(prev => prev.filter(el => el.id !== elId));
+      setElements((prev) => prev.filter((el) => el.id !== elId));
       return;
     }
 
-    if (activeTool !== 'select') return;
+    if (activeTool !== "select") return;
     e.stopPropagation();
 
-    const target = elements.find(el => el.id === elId);
-    if (!target) return;
+    tokenMouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+    tokenDraggedRef.current = false;
 
-    const mapRect = mapContainerRef.current?.getBoundingClientRect();
-    if (!mapRect) return;
+    const target = elements.find((el) => el.id === elId);
+    if (!target) return;
 
     setDraggedTokenId(elId);
   };
 
-  const toggleTokenTeam = (e: React.MouseEvent, elId: string) => {
+  // Gerenciamento de Pokémon no mapa:
+  // 1 clique: alterna equipe (Time Azul <-> Time Laranja)
+  // 2 cliques: exclui o Pokémon do mapa
+  const handleTokenClick = (e: React.MouseEvent, elId: string) => {
     e.stopPropagation();
+
+    // Se o usuário arrastou o token pelo mapa, não dispara clique
+    if (tokenDraggedRef.current) {
+      tokenDraggedRef.current = false;
+      return;
+    }
+
+    // Se já havia um clique aguardando dentro da janela de 240ms -> 2º CLIQUE (EXCLUIR)
+    if (tokenClickTimerRef.current[elId]) {
+      clearTimeout(tokenClickTimerRef.current[elId]);
+      delete tokenClickTimerRef.current[elId];
+
+      pushHistory();
+      setElements((prev) => prev.filter((el) => el.id !== elId));
+      return;
+    }
+
+    // 1º Clique: aguarda 240ms para checar se haverá um segundo clique de exclusão
+    tokenClickTimerRef.current[elId] = setTimeout(() => {
+      delete tokenClickTimerRef.current[elId];
+
+      pushHistory();
+      setElements((prev) =>
+        prev.map((el) => {
+          if (el.id === elId) {
+            return {
+              ...el,
+              team: el.team === "blue" ? "orange" : "blue",
+            };
+          }
+          return el;
+        }),
+      );
+    }, 240);
+  };
+
+  const handleTokenDoubleClick = (e: React.MouseEvent, elId: string) => {
+    e.stopPropagation();
+    if (tokenClickTimerRef.current[elId]) {
+      clearTimeout(tokenClickTimerRef.current[elId]);
+      delete tokenClickTimerRef.current[elId];
+    }
     pushHistory();
-    setElements(prev => prev.map(el => {
-      if (el.id === elId) {
-        return {
-          ...el,
-          team: el.team === 'blue' ? 'orange' : 'blue'
-        };
-      }
-      return el;
-    }));
+    setElements((prev) => prev.filter((el) => el.id !== elId));
   };
 
   const removeElement = (e: React.MouseEvent, elId: string) => {
     e.stopPropagation();
     pushHistory();
-    setElements(prev => prev.filter(el => el.id !== elId));
+    setElements((prev) => prev.filter((el) => el.id !== elId));
   };
 
   // Render do Canvas de Desenho (Pincel, Setas, Linhas)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const w = canvas.width;
@@ -340,15 +596,16 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     ctx.clearRect(0, 0, w, h);
 
     // Desenhar elementos permanentes
-    elements.forEach(el => {
-      const elColor = el.color || '#0B5FFF';
-      
+    elements.forEach((el) => {
+      const elColor = el.color || "#0B5FFF";
+      const wWidth = el.width || 4;
+
       // Traço livre
-      if (el.type === 'draw' && el.points && el.points.length > 1) {
+      if (el.type === "draw" && el.points && el.points.length > 1) {
         ctx.strokeStyle = elColor;
-        ctx.lineWidth = 4;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
+        ctx.lineWidth = wWidth;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
         ctx.beginPath();
         ctx.moveTo((el.points[0].x / 100) * w, (el.points[0].y / 100) * h);
         for (let i = 1; i < el.points.length; i++) {
@@ -358,22 +615,23 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
       }
 
       // Seta tática
-      if (el.type === 'arrow' && el.toX !== undefined && el.toY !== undefined) {
+      if (el.type === "arrow" && el.toX !== undefined && el.toY !== undefined) {
         drawTacticalArrow(
-          ctx, 
-          (el.x / 100) * w, 
-          (el.y / 100) * h, 
-          (el.toX / 100) * w, 
-          (el.toY / 100) * h, 
-          elColor
+          ctx,
+          (el.x / 100) * w,
+          (el.y / 100) * h,
+          (el.toX / 100) * w,
+          (el.toY / 100) * h,
+          elColor,
+          wWidth,
         );
       }
 
       // Linha reta
-      if (el.type === 'line' && el.toX !== undefined && el.toY !== undefined) {
+      if (el.type === "line" && el.toX !== undefined && el.toY !== undefined) {
         ctx.strokeStyle = elColor;
-        ctx.lineWidth = 3.5;
-        ctx.lineCap = 'round';
+        ctx.lineWidth = wWidth;
+        ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo((el.x / 100) * w, (el.y / 100) * h);
         ctx.lineTo((el.toX / 100) * w, (el.toY / 100) * h);
@@ -382,65 +640,86 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     });
 
     // Traço temporário durante desenho ativo
-    if (isDrawing && activeTool === 'draw' && currentStroke.length > 1) {
+    if (isDrawing && activeTool === "draw" && currentStroke.length > 1) {
       ctx.strokeStyle = activeColor;
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      ctx.lineWidth = strokeWidth;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
       ctx.beginPath();
-      ctx.moveTo((currentStroke[0].x / 100) * w, (currentStroke[0].y / 100) * h);
+      ctx.moveTo(
+        (currentStroke[0].x / 100) * w,
+        (currentStroke[0].y / 100) * h,
+      );
       for (let i = 1; i < currentStroke.length; i++) {
-        ctx.lineTo((currentStroke[i].x / 100) * w, (currentStroke[i].y / 100) * h);
+        ctx.lineTo(
+          (currentStroke[i].x / 100) * w,
+          (currentStroke[i].y / 100) * h,
+        );
       }
       ctx.stroke();
     }
 
     // Seta ou linha temporária durante o clique e arraste
-    if (isDrawing && (activeTool === 'arrow' || activeTool === 'line') && dragStartPoint && currentStroke.length > 0) {
+    if (
+      isDrawing &&
+      (activeTool === "arrow" || activeTool === "line") &&
+      dragStartPoint &&
+      currentStroke.length > 0
+    ) {
       const current = currentStroke[currentStroke.length - 1];
-      if (activeTool === 'arrow') {
+      if (activeTool === "arrow") {
         drawTacticalArrow(
-          ctx, 
-          (dragStartPoint.x / 100) * w, 
-          (dragStartPoint.y / 100) * h, 
-          (current.x / 100) * w, 
-          (current.y / 100) * h, 
-          activeColor
+          ctx,
+          (dragStartPoint.x / 100) * w,
+          (dragStartPoint.y / 100) * h,
+          (current.x / 100) * w,
+          (current.y / 100) * h,
+          activeColor,
+          strokeWidth,
         );
       } else {
         ctx.strokeStyle = activeColor;
-        ctx.lineWidth = 3.5;
-        ctx.lineCap = 'round';
+        ctx.lineWidth = strokeWidth;
+        ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo((dragStartPoint.x / 100) * w, (dragStartPoint.y / 100) * h);
         ctx.lineTo((current.x / 100) * w, (current.y / 100) * h);
         ctx.stroke();
       }
     }
-  }, [elements, isDrawing, currentStroke, activeTool, activeColor, dragStartPoint]);
+  }, [
+    elements,
+    isDrawing,
+    currentStroke,
+    activeTool,
+    activeColor,
+    strokeWidth,
+    dragStartPoint,
+  ]);
 
   // Função para desenhar seta com ponta perfeita e contorno
   const drawTacticalArrow = (
-    ctx: CanvasRenderingContext2D, 
-    fromX: number, 
-    fromY: number, 
-    toX: number, 
-    toY: number, 
-    color: string
+    ctx: CanvasRenderingContext2D,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    color: string,
+    width: number = 4,
   ) => {
-    const headLen = 16;
+    const headLen = Math.max(14, width * 3.5);
     const angle = Math.atan2(toY - fromY, toX - fromX);
 
     // Sombra sutil
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
     ctx.shadowBlur = 6;
 
     // Haste da seta
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
 
     ctx.beginPath();
     ctx.moveTo(fromX, fromY);
@@ -451,12 +730,12 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     ctx.beginPath();
     ctx.moveTo(toX, toY);
     ctx.lineTo(
-      toX - headLen * Math.cos(angle - Math.PI / 6), 
-      toY - headLen * Math.sin(angle - Math.PI / 6)
+      toX - headLen * Math.cos(angle - Math.PI / 6),
+      toY - headLen * Math.sin(angle - Math.PI / 6),
     );
     ctx.lineTo(
-      toX - headLen * Math.cos(angle + Math.PI / 6), 
-      toY - headLen * Math.sin(angle + Math.PI / 6)
+      toX - headLen * Math.cos(angle + Math.PI / 6),
+      toY - headLen * Math.sin(angle + Math.PI / 6),
     );
     ctx.closePath();
     ctx.fill();
@@ -465,24 +744,29 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
 
   // Iniciar Pan pelo Viewport
   const handleViewportMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || isSpacePressed || activeTool === 'pan' || e.target === viewportRef.current) {
+    if (
+      e.button === 1 ||
+      isSpacePressed ||
+      activeTool === "pan" ||
+      e.target === viewportRef.current
+    ) {
       e.preventDefault();
       setIsPanning(true);
       setPanStart({
         x: e.clientX - panOffset.x,
-        y: e.clientY - panOffset.y
+        y: e.clientY - panOffset.y,
       });
     }
   };
 
   // Eventos de Mouse no Canvas / Mapa
   const handleMapMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || isSpacePressed || activeTool === 'pan') {
+    if (e.button === 1 || isSpacePressed || activeTool === "pan") {
       e.preventDefault();
       setIsPanning(true);
       setPanStart({
         x: e.clientX - panOffset.x,
-        y: e.clientY - panOffset.y
+        y: e.clientY - panOffset.y,
       });
       return;
     }
@@ -493,17 +777,52 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     const xPercent = ((e.clientX - mapRect.left) / mapRect.width) * 100;
     const yPercent = ((e.clientY - mapRect.top) / mapRect.height) * 100;
 
-    if (activeTool === 'text') {
+    if (activeTool === "text") {
       setTextModal({
         open: true,
         x: xPercent,
         y: yPercent,
-        text: ''
+        text: "",
       });
       return;
     }
 
-    if (activeTool === 'draw' || activeTool === 'arrow' || activeTool === 'line') {
+    if (activeTool === "eraser") {
+      const target = elements.find((el) => {
+        if (el.type === "token") {
+          return Math.hypot(el.x - xPercent, el.y - yPercent) < 4;
+        }
+        if (el.type === "text") {
+          return Math.hypot(el.x - xPercent, el.y - yPercent) < 5;
+        }
+        if (el.type === "draw" && el.points) {
+          return el.points.some(
+            (p) => Math.hypot(p.x - xPercent, p.y - yPercent) < 3.5,
+          );
+        }
+        if (el.type === "arrow" || el.type === "line") {
+          return (
+            Math.hypot(el.x - xPercent, el.y - yPercent) < 4 ||
+            (el.toX !== undefined &&
+              el.toY !== undefined &&
+              Math.hypot(el.toX - xPercent, el.toY - yPercent) < 4)
+          );
+        }
+        return false;
+      });
+
+      if (target) {
+        pushHistory();
+        setElements((prev) => prev.filter((el) => el.id !== target.id));
+      }
+      return;
+    }
+
+    if (
+      activeTool === "draw" ||
+      activeTool === "arrow" ||
+      activeTool === "line"
+    ) {
       setIsDrawing(true);
       setDragStartPoint({ x: xPercent, y: yPercent });
       setCurrentStroke([{ x: xPercent, y: yPercent }]);
@@ -514,7 +833,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     if (isPanning) {
       setPanOffset({
         x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y
+        y: e.clientY - panStart.y,
       });
       return;
     }
@@ -523,30 +842,51 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     if (!mapRect) return;
 
     // Se estiver arrastando um Token existente
-    if (draggedTokenId && activeTool === 'select') {
-      const xPercent = Math.max(2, Math.min(95, ((e.clientX - mapRect.left) / mapRect.width) * 100));
-      const yPercent = Math.max(4, Math.min(94, ((e.clientY - mapRect.top) / mapRect.height) * 100));
-
-      setElements(prev => prev.map(el => {
-        if (el.id === draggedTokenId) {
-          return { ...el, x: xPercent, y: yPercent };
+    if (draggedTokenId && activeTool === "select") {
+      if (tokenMouseDownPosRef.current) {
+        const dist = Math.hypot(
+          e.clientX - tokenMouseDownPosRef.current.x,
+          e.clientY - tokenMouseDownPosRef.current.y,
+        );
+        if (dist > 3) {
+          tokenDraggedRef.current = true;
         }
-        return el;
-      }));
+      }
+
+      const xPercent = Math.max(
+        2,
+        Math.min(95, ((e.clientX - mapRect.left) / mapRect.width) * 100),
+      );
+      const yPercent = Math.max(
+        4,
+        Math.min(94, ((e.clientY - mapRect.top) / mapRect.height) * 100),
+      );
+
+      setElements((prev) =>
+        prev.map((el) => {
+          if (el.id === draggedTokenId) {
+            return { ...el, x: xPercent, y: yPercent };
+          }
+          return el;
+        }),
+      );
       return;
     }
 
     // Se estiver desenhando
-    if (isDrawing && (activeTool === 'draw' || activeTool === 'arrow' || activeTool === 'line')) {
+    if (
+      isDrawing &&
+      (activeTool === "draw" || activeTool === "arrow" || activeTool === "line")
+    ) {
       const xPercent = ((e.clientX - mapRect.left) / mapRect.width) * 100;
       const yPercent = ((e.clientY - mapRect.top) / mapRect.height) * 100;
 
-      if (activeTool === 'arrow' || activeTool === 'line') {
+      if (activeTool === "arrow" || activeTool === "line") {
         if (dragStartPoint) {
           setCurrentStroke([dragStartPoint, { x: xPercent, y: yPercent }]);
         }
-      } else if (activeTool === 'draw') {
-        setCurrentStroke(prev => {
+      } else if (activeTool === "draw") {
+        setCurrentStroke((prev) => {
           if (prev.length > 0) {
             const last = prev[prev.length - 1];
             const dist = Math.hypot(last.x - xPercent, last.y - yPercent);
@@ -564,50 +904,72 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     }
 
     if (draggedTokenId) {
-      pushHistory();
+      if (tokenDraggedRef.current) {
+        pushHistory();
+      }
       setDraggedTokenId(null);
     }
 
     if (!isDrawing) return;
 
-    if (activeTool === 'draw' && currentStroke.length > 1) {
+    if (activeTool === "draw" && currentStroke.length > 1) {
       pushHistory();
-      setElements(prev => [...prev, {
-        id: `draw-${Date.now()}`,
-        type: 'draw',
-        x: currentStroke[0].x,
-        y: currentStroke[0].y,
-        points: currentStroke,
-        color: activeColor
-      }]);
-    } else if (activeTool === 'arrow' && dragStartPoint && currentStroke.length > 0) {
+      setElements((prev) => [
+        ...prev,
+        {
+          id: `draw-${Date.now()}`,
+          type: "draw",
+          x: currentStroke[0].x,
+          y: currentStroke[0].y,
+          points: currentStroke,
+          color: activeColor,
+          width: strokeWidth,
+        },
+      ]);
+    } else if (
+      activeTool === "arrow" &&
+      dragStartPoint &&
+      currentStroke.length > 0
+    ) {
       const end = currentStroke[currentStroke.length - 1];
       // Ignorar cliques acidentais sem movimento
       if (Math.hypot(end.x - dragStartPoint.x, end.y - dragStartPoint.y) > 2) {
         pushHistory();
-        setElements(prev => [...prev, {
-          id: `arrow-${Date.now()}`,
-          type: 'arrow',
-          x: dragStartPoint.x,
-          y: dragStartPoint.y,
-          toX: end.x,
-          toY: end.y,
-          color: activeColor
-        }]);
+        setElements((prev) => [
+          ...prev,
+          {
+            id: `arrow-${Date.now()}`,
+            type: "arrow",
+            x: dragStartPoint.x,
+            y: dragStartPoint.y,
+            toX: end.x,
+            toY: end.y,
+            color: activeColor,
+            width: strokeWidth,
+          },
+        ]);
       }
-    } else if (activeTool === 'line' && dragStartPoint && currentStroke.length > 0) {
+    } else if (
+      activeTool === "line" &&
+      dragStartPoint &&
+      currentStroke.length > 0
+    ) {
       const end = currentStroke[currentStroke.length - 1];
       if (Math.hypot(end.x - dragStartPoint.x, end.y - dragStartPoint.y) > 2) {
         pushHistory();
-        setElements(prev => [...prev, {
-          id: `line-${Date.now()}`,
-          type: 'line',
-          x: dragStartPoint.x,
-          y: dragStartPoint.y,
-          toX: end.x,
-          toY: end.y,
-          color: activeColor
-        }]);
+        setElements((prev) => [
+          ...prev,
+          {
+            id: `line-${Date.now()}`,
+            type: "line",
+            x: dragStartPoint.x,
+            y: dragStartPoint.y,
+            toX: end.x,
+            toY: end.y,
+            color: activeColor,
+            width: strokeWidth,
+          },
+        ]);
       }
     }
 
@@ -619,113 +981,130 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   // Confirmar adição de texto no mapa
   const handleConfirmText = () => {
     if (!textModal.text.trim()) {
-      setTextModal({ open: false, x: 0, y: 0, text: '' });
+      setTextModal({ open: false, x: 0, y: 0, text: "" });
       return;
     }
 
     pushHistory();
-    setElements(prev => [...prev, {
-      id: `text-${Date.now()}`,
-      type: 'text',
-      x: textModal.x,
-      y: textModal.y,
-      label: textModal.text,
-      color: activeColor
-    }]);
+    setElements((prev) => [
+      ...prev,
+      {
+        id: `text-${Date.now()}`,
+        type: "text",
+        x: textModal.x,
+        y: textModal.y,
+        label: textModal.text,
+        color: activeColor,
+      },
+    ]);
 
-    setTextModal({ open: false, x: 0, y: 0, text: '' });
+    setTextModal({ open: false, x: 0, y: 0, text: "" });
   };
 
   // Exportar prancheta montada como PNG em alta resolução
   const handleExportBoard = () => {
     const mapImg = new Image();
-    mapImg.crossOrigin = 'anonymous';
+    mapImg.crossOrigin = "anonymous";
     mapImg.src = THEIA_MAP.image;
 
     mapImg.onload = () => {
-      const exportCanvas = document.createElement('canvas');
+      const exportCanvas = document.createElement("canvas");
       exportCanvas.width = 1920;
       exportCanvas.height = 1080;
-      const ctx = exportCanvas.getContext('2d');
+      const ctx = exportCanvas.getContext("2d");
       if (!ctx) return;
 
       // Desenhar mapa de fundo com alta fidelidade
       ctx.drawImage(mapImg, 0, 0, 1920, 1080);
 
       // Camada de elementos vetoriais (desenhos, setas, linhas)
-      elements.forEach(el => {
-        const elColor = el.color || '#0B5FFF';
-        if (el.type === 'draw' && el.points && el.points.length > 1) {
+      elements.forEach((el) => {
+        const elColor = el.color || "#0B5FFF";
+        if (el.type === "draw" && el.points && el.points.length > 1) {
           ctx.strokeStyle = elColor;
           ctx.lineWidth = 8;
-          ctx.lineCap = 'round';
+          ctx.lineCap = "round";
           ctx.beginPath();
-          ctx.moveTo((el.points[0].x / 100) * 1920, (el.points[0].y / 100) * 1080);
+          ctx.moveTo(
+            (el.points[0].x / 100) * 1920,
+            (el.points[0].y / 100) * 1080,
+          );
           for (let i = 1; i < el.points.length; i++) {
-            ctx.lineTo((el.points[i].x / 100) * 1920, (el.points[i].y / 100) * 1080);
+            ctx.lineTo(
+              (el.points[i].x / 100) * 1920,
+              (el.points[i].y / 100) * 1080,
+            );
           }
           ctx.stroke();
-        } else if (el.type === 'arrow' && el.toX !== undefined && el.toY !== undefined) {
+        } else if (
+          el.type === "arrow" &&
+          el.toX !== undefined &&
+          el.toY !== undefined
+        ) {
           drawTacticalArrow(
-            ctx, 
-            (el.x / 100) * 1920, 
-            (el.y / 100) * 1080, 
-            (el.toX / 100) * 1920, 
-            (el.toY / 100) * 1080, 
-            elColor
+            ctx,
+            (el.x / 100) * 1920,
+            (el.y / 100) * 1080,
+            (el.toX / 100) * 1920,
+            (el.toY / 100) * 1080,
+            elColor,
           );
-        } else if (el.type === 'line' && el.toX !== undefined && el.toY !== undefined) {
+        } else if (
+          el.type === "line" &&
+          el.toX !== undefined &&
+          el.toY !== undefined
+        ) {
           ctx.strokeStyle = elColor;
           ctx.lineWidth = 7;
-          ctx.lineCap = 'round';
+          ctx.lineCap = "round";
           ctx.beginPath();
           ctx.moveTo((el.x / 100) * 1920, (el.y / 100) * 1080);
           ctx.lineTo((el.toX / 100) * 1920, (el.toY / 100) * 1080);
           ctx.stroke();
-        } else if (el.type === 'text' && el.label) {
-          ctx.font = 'bold 24px Outfit, sans-serif';
+        } else if (el.type === "text" && el.label) {
+          ctx.font = "bold 24px Outfit, sans-serif";
           ctx.fillStyle = elColor;
-          ctx.shadowColor = 'rgba(0,0,0,0.85)';
+          ctx.shadowColor = "rgba(0,0,0,0.85)";
           ctx.shadowBlur = 8;
           ctx.fillText(el.label, (el.x / 100) * 1920, (el.y / 100) * 1080);
         }
       });
 
       // Renderizar tokens de Pokémon posicionados no mapa
-      const tokenElements = elements.filter(el => el.type === 'token');
-      const tokenPromises = tokenElements.map(el => {
+      const tokenElements = elements.filter((el) => el.type === "token");
+      const tokenPromises = tokenElements.map((el) => {
         return new Promise<void>((resolve) => {
           if (!el.pokemonSprite) return resolve();
           const img = new Image();
-          img.crossOrigin = 'anonymous';
+          img.crossOrigin = "anonymous";
           img.onload = () => {
             const cx = (el.x / 100) * 1920;
             const cy = (el.y / 100) * 1080;
-            const radius = 28;
+            const radius = 22;
 
             ctx.save();
             ctx.beginPath();
-            ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
-            ctx.fillStyle = el.team === 'blue' ? '#0B5FFF' : '#F97316';
-            ctx.shadowColor = el.team === 'blue' ? 'rgba(11, 95, 255, 0.8)' : 'rgba(249, 115, 22, 0.8)';
-            ctx.shadowBlur = 12;
+            ctx.arc(cx, cy, radius + 3, 0, Math.PI * 2);
+            ctx.fillStyle = el.team === "blue" ? "#0B5FFF" : "#F97316";
+            ctx.shadowColor =
+              el.team === "blue"
+                ? "rgba(11, 95, 255, 0.8)"
+                : "rgba(249, 115, 22, 0.8)";
+            ctx.shadowBlur = 10;
             ctx.fill();
 
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
             ctx.clip();
-            ctx.fillStyle = '#0f172a';
+            ctx.fillStyle = "#0f172a";
             ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
-            ctx.drawImage(img, cx - radius, cy - radius, radius * 2, radius * 2);
-            ctx.restore();
-
-            ctx.save();
-            ctx.font = 'bold 15px Outfit, sans-serif';
-            ctx.fillStyle = '#FFFFFF';
-            ctx.textAlign = 'center';
-            ctx.shadowColor = 'rgba(0,0,0,0.9)';
-            ctx.shadowBlur = 6;
-            ctx.fillText(el.pokemonName || '', cx, cy + radius + 18);
+            ctx.drawImage(
+              img,
+              cx - radius,
+              cy - radius,
+              radius * 2,
+              radius * 2,
+            );
             ctx.restore();
 
             resolve();
@@ -736,9 +1115,9 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
       });
 
       Promise.all(tokenPromises).then(() => {
-        const link = document.createElement('a');
+        const link = document.createElement("a");
         link.download = `prancheta-friba-theia-${Date.now()}.png`;
-        link.href = exportCanvas.toDataURL('image/png');
+        link.href = exportCanvas.toDataURL("image/png");
         link.click();
       });
     };
@@ -746,18 +1125,19 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
 
   // Salvar estratégia personalizada
   const handleSaveCurrentStrategy = () => {
-    const title = stratTitle.trim() || `Tática: ${THEIA_MAP.name} #${presets.length + 1}`;
+    const title =
+      stratTitle.trim() || `Tática: ${THEIA_MAP.name} #${presets.length + 1}`;
     if (onSaveStrategy) {
       onSaveStrategy({
         id: `strat-${Date.now()}`,
         title,
-        phaseTime: 'Geral',
+        phaseTime: "Geral",
         description: `Estratégia salva no mapa ${THEIA_MAP.name}`,
-        elements: [...elements]
+        elements: [...elements],
       });
       setShowSaveSuccess(true);
       setTimeout(() => setShowSaveSuccess(false), 3000);
-      setStratTitle('');
+      setStratTitle("");
     }
   };
 
@@ -777,10 +1157,9 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
 
         {/* Ações Rápidas: Desfazer, Limpar e Exportar */}
         <div className="tactical-top-actions">
-
           {/* Desfazer & Limpar */}
-          <button 
-            className="action-btn-pill undo" 
+          <button
+            className="action-btn-pill undo"
             onClick={handleUndo}
             disabled={history.length === 0}
             title="Desfazer última alteração"
@@ -788,16 +1167,27 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
             <RotateCcw size={13} /> DESFAZER
           </button>
 
-          <button 
-            className="action-btn-pill clear" 
+          <button
+            className="action-btn-pill clear"
             onClick={handleClear}
             title="Limpar todos os elementos do mapa"
           >
             <Trash2 size={13} /> LIMPAR
           </button>
 
-          <button 
-            className="action-btn-pill export" 
+          {onSaveStrategy && (
+            <button
+              className="action-btn-pill save"
+              onClick={handleSaveCurrentStrategy}
+              title="Salvar prancheta tática"
+            >
+              {showSaveSuccess ? <Check size={13} /> : <Bookmark size={13} />}
+              {showSaveSuccess ? "SALVO!" : "SALVAR"}
+            </button>
+          )}
+
+          <button
+            className="action-btn-pill export"
             onClick={handleExportBoard}
             title="Exportar imagem PNG da prancheta"
           >
@@ -813,57 +1203,57 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
         {/* BARRA LATERAL ESQUERDA: FERRAMENTAS DE DESENHO */}
         <div className="tactical-left-tools">
           <div className="tools-button-group">
-            <button 
-              className={`tool-icon-btn ${activeTool === 'select' ? 'active select-mode' : ''}`}
-              onClick={() => setActiveTool('select')}
+            <button
+              className={`tool-icon-btn ${activeTool === "select" ? "active select-mode" : ""}`}
+              onClick={() => setActiveTool("select")}
               title="Selecionar e Mover Pokémon / Elementos"
             >
               <MousePointer size={18} />
             </button>
 
-            <button 
-              className={`tool-icon-btn ${activeTool === 'draw' ? 'active' : ''}`}
-              onClick={() => setActiveTool('draw')}
+            <button
+              className={`tool-icon-btn ${activeTool === "draw" ? "active" : ""}`}
+              onClick={() => setActiveTool("draw")}
               title="Pincel / Desenho Livre"
             >
               <Pencil size={18} />
             </button>
 
-            <button 
-              className={`tool-icon-btn ${activeTool === 'arrow' ? 'active' : ''}`}
-              onClick={() => setActiveTool('arrow')}
+            <button
+              className={`tool-icon-btn ${activeTool === "arrow" ? "active" : ""}`}
+              onClick={() => setActiveTool("arrow")}
               title="Seta Tática de Rotação ou Foco"
             >
               <ArrowUpRight size={19} />
             </button>
 
-            <button 
-              className={`tool-icon-btn ${activeTool === 'line' ? 'active' : ''}`}
-              onClick={() => setActiveTool('line')}
+            <button
+              className={`tool-icon-btn ${activeTool === "line" ? "active" : ""}`}
+              onClick={() => setActiveTool("line")}
               title="Linha Reta de Conexão"
             >
               <Minus size={18} />
             </button>
 
-            <button 
-              className={`tool-icon-btn ${activeTool === 'text' ? 'active' : ''}`}
-              onClick={() => setActiveTool('text')}
+            <button
+              className={`tool-icon-btn ${activeTool === "text" ? "active" : ""}`}
+              onClick={() => setActiveTool("text")}
               title="Adicionar Texto / Anotação no Mapa"
             >
               <Type size={18} />
             </button>
 
-            <button 
-              className={`tool-icon-btn ${activeTool === 'eraser' ? 'active eraser-mode' : ''}`}
-              onClick={() => setActiveTool('eraser')}
+            <button
+              className={`tool-icon-btn ${activeTool === "eraser" ? "active eraser-mode" : ""}`}
+              onClick={() => setActiveTool("eraser")}
               title="Borracha: Clique em um Pokémon ou traço para apagar"
             >
               <Eraser size={18} />
             </button>
 
-            <button 
-              className={`tool-icon-btn ${activeTool === 'pan' ? 'active pan-mode' : ''}`}
-              onClick={() => setActiveTool('pan')}
+            <button
+              className={`tool-icon-btn ${activeTool === "pan" ? "active pan-mode" : ""}`}
+              onClick={() => setActiveTool("pan")}
               title="Mão / Navegação (Clique e arraste para mover o mapa, ou segure Espaço)"
             >
               <Hand size={18} />
@@ -874,156 +1264,247 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           <div className="tools-color-palette">
             <div className="palette-label">COR</div>
             {[
-              { color: '#0B5FFF', label: 'Azul Friba' },
-              { color: '#D61F26', label: 'Vermelho Friba' },
-              { color: '#F59E0B', label: 'Dourado / Objetivo' },
-              { color: '#10B981', label: 'Verde / Seguro' },
-              { color: '#FFFFFF', label: 'Branco / Neutro' },
-              { color: '#8B5CF6', label: 'Roxo / Especial' }
+              { color: "#0B5FFF", label: "Azul Friba" },
+              { color: "#D61F26", label: "Vermelho Friba" },
+              { color: "#F59E0B", label: "Dourado / Objetivo" },
+              { color: "#10B981", label: "Verde / Seguro" },
+              { color: "#FFFFFF", label: "Branco / Neutro" },
+              { color: "#8B5CF6", label: "Roxo / Especial" },
             ].map((c) => (
               <button
                 key={c.color}
-                className={`color-dot-btn ${activeColor === c.color ? 'active' : ''}`}
+                className={`color-dot-btn ${activeColor === c.color ? "active" : ""}`}
                 style={{ backgroundColor: c.color }}
                 onClick={() => setActiveColor(c.color)}
                 title={c.label}
               />
             ))}
           </div>
+
+          {/* Seletor de Espessura para Ferramentas de Desenho (Estilo Dragounite) */}
+          {(activeTool === "draw" ||
+            activeTool === "arrow" ||
+            activeTool === "line") && (
+            <div className="tools-stroke-section">
+              <div className="palette-label">ESPESSURA</div>
+              <div className="stroke-preview-box">
+                <span
+                  className="stroke-preview-dot"
+                  style={{
+                    width: `${strokeWidth * 3}px`,
+                    height: `${strokeWidth * 3}px`,
+                    backgroundColor: activeColor,
+                    boxShadow: `0 0 8px ${activeColor}`,
+                  }}
+                />
+                <span className="stroke-preview-val">{strokeWidth}px</span>
+              </div>
+              <div className="stroke-preset-pills">
+                {[2, 4, 6, 8].map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    className={`stroke-pill-btn ${strokeWidth === w ? "active" : ""}`}
+                    onClick={() => setStrokeWidth(w)}
+                    title={`Espessura ${w}px`}
+                  >
+                    {w}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ÁREA CENTRAL: O MAPA INTERATIVO + CANVAS */}
-        <div 
+        <div
           ref={viewportRef}
-          className={`tactical-center-viewport ${isPanning ? 'panning' : ''} ${isSpacePressed || activeTool === 'pan' ? 'pan-active' : ''}`}
+          className={`tactical-center-viewport ${isPanning ? "panning" : ""} ${isSpacePressed || activeTool === "pan" ? "pan-active" : ""}`}
           onMouseDown={handleViewportMouseDown}
           onMouseMove={handleMapMouseMove}
           onMouseUp={handleMapMouseUp}
         >
-          <div 
+          {/* HUD Badge de Zoom e Navegação Superior (Inspirado no Dragounite) */}
+          {zoom > 100 && (
+            <div className="map-hud-zoom-badge">
+              <span className="hud-zoom-val">{zoom}%</span>
+              <span className="hud-zoom-sep">·</span>
+              <span className="hud-zoom-hint">
+                {activeTool === "pan"
+                  ? "Arraste para mover o mapa"
+                  : "Ctrl + Scroll para zoom"}
+              </span>
+            </div>
+          )}
+
+          <div
             className="map-scalable-wrapper"
-            style={{ 
+            style={{
               transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom / 100})`,
-              transition: (isPanning || isWheelZooming) ? 'none' : 'transform 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
+              transition:
+                isPanning || isWheelZooming
+                  ? "none"
+                  : "transform 0.18s cubic-bezier(0.16, 1, 0.3, 1)",
             }}
           >
-            <div 
+            <div
               ref={mapContainerRef}
-              className={`map-interactive-stage ${activeTool} ${isPanning ? 'panning' : ''}`}
+              className={`map-interactive-stage ${activeTool} ${isPanning ? "panning" : ""} ${dragOverMap ? "drag-over" : ""}`}
               onMouseDown={handleMapMouseDown}
               onMouseMove={handleMapMouseMove}
               onMouseUp={handleMapMouseUp}
               onDragOver={handleDragOverMap}
+              onDragLeave={handleDragLeaveMap}
               onDrop={handleDropOnMap}
             >
               {/* Imagem Real de Fundo de Alta Definição (1.2MB Oficial Lossless) */}
-              <img 
-                src={THEIA_MAP.image} 
-                alt={THEIA_MAP.name} 
+              <img
+                src={THEIA_MAP.image}
+                alt={THEIA_MAP.name}
                 className="map-background-render"
                 draggable={false}
               />
 
+              {/* Overlay Interativo de Drop Zone com Feedback Visual */}
+              {dragOverMap && (
+                <div className="map-drop-target-overlay">
+                  <div className="drop-target-badge">
+                    SOLTE AQUI PARA POSICIONAR NO MAPA
+                  </div>
+                </div>
+              )}
+
               {/* Canvas HTML5 de Alta Precisão (1280x591) para Linhas, Pincel e Setas */}
-              <canvas 
+              <canvas
                 ref={canvasRef}
                 width={1280}
                 height={591}
                 className="map-drawing-canvas"
               />
 
-              {/* Camada de Textos Adicionados */}
-              {elements.filter(el => el.type === 'text').map(el => (
-                <div 
-                  key={el.id}
-                  className="map-tactical-label"
-                  style={{
-                    left: `${el.x}%`,
-                    top: `${el.y}%`,
-                    color: el.color || '#FFFFFF',
-                    borderColor: el.color || '#FFFFFF'
-                  }}
-                  onClick={(e) => {
-                    if (activeTool === 'eraser') removeElement(e, el.id);
-                  }}
-                >
-                  <span>{el.label}</span>
-                  {activeTool === 'eraser' && <X size={12} className="remove-badge-ico" />}
-                </div>
-              ))}
-
-              {/* Camada de Tokens de Pokémon */}
-              {elements.filter(el => el.type === 'token').map(el => {
-                const isBlue = el.team === 'blue';
-                return (
+              {/* Camada de Textos Adicionados com compensação de escala */}
+              {elements
+                .filter((el) => el.type === "text")
+                .map((el) => (
                   <div
                     key={el.id}
-                    className={`map-pokemon-token ${isBlue ? 'team-blue' : 'team-orange'}`}
-                    style={{
-                      left: `${el.x}%`,
-                      top: `${el.y}%`
+                    className="map-tactical-label"
+                    style={
+                      {
+                        left: `${el.x}%`,
+                        top: `${el.y}%`,
+                        color: el.color || "#FFFFFF",
+                        borderColor: el.color || "#FFFFFF",
+                        "--label-scale": `${100 / zoom}`,
+                      } as React.CSSProperties
+                    }
+                    onClick={(e) => {
+                      if (activeTool === "eraser") removeElement(e, el.id);
                     }}
-                    onMouseDown={(e) => handleTokenMouseDown(e, el.id)}
-                    title={`${el.pokemonName} (${isBlue ? 'Time Azul' : 'Time Laranja'}) - Clique duas vezes para alternar time`}
-                    onDoubleClick={(e) => toggleTokenTeam(e, el.id)}
                   >
-                    <div className="token-avatar-ring">
-                      <img 
-                        src={el.pokemonSprite} 
-                        alt={el.pokemonName} 
-                        className="token-sprite-img" 
-                        draggable={false}
-                      />
-                    </div>
-
-                    <div className="token-name-tag">
-                      {el.pokemonName}
-                    </div>
-
-                    {/* Botões de Ação Rápida no Hover */}
-                    <div className="token-quick-actions">
-                      <button 
-                        className="toggle-team-btn" 
-                        onClick={(e) => toggleTokenTeam(e, el.id)}
-                        title="Alternar Time Azul / Laranja"
-                      >
-                        {isBlue ? 'AZUL' : 'LARANJA'}
-                      </button>
-                      <button 
-                        className="del-token-btn" 
-                        onClick={(e) => removeElement(e, el.id)}
-                        title="Remover do Mapa"
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
+                    <span>{el.label}</span>
+                    {activeTool === "eraser" && (
+                      <X size={12} className="remove-badge-ico" />
+                    )}
                   </div>
-                );
-              })}
+                ))}
 
-              {/* Banner Flutuante de Ajuda */}
-              <div className="map-bottom-hint-banner">
-                <span>ARRASTE OU CLIQUE EM UM POKÉMON ABAIXO PARA ADICIONAR AO MAPA</span>
-              </div>
+              {/* Camada de Tokens de Pokémon com escala adaptativa ao zoom */}
+              {elements
+                .filter((el) => el.type === "token")
+                .map((el) => {
+                  const isBlue = el.team === "blue";
+                  const isDragging = draggedTokenId === el.id;
+                  const hasMember = Boolean(el.memberNickname || el.memberName);
+                  return (
+                    <div
+                      key={el.id}
+                      className={`map-pokemon-token ${isBlue ? "team-blue" : "team-orange"} ${isDragging ? "is-dragging" : ""} ${hasMember ? "has-linked-member" : ""}`}
+                      style={
+                        {
+                          left: `${el.x}%`,
+                          top: `${el.y}%`,
+                          "--token-scale": `${100 / zoom}`,
+                        } as React.CSSProperties
+                      }
+                      onMouseDown={(e) => handleTokenMouseDown(e, el.id)}
+                      onClick={(e) => handleTokenClick(e, el.id)}
+                      onDoubleClick={(e) => handleTokenDoubleClick(e, el.id)}
+                      title={
+                        hasMember
+                          ? `${el.memberName} (@${el.memberNickname}) · ${el.pokemonName} (${el.memberLane || "Rota Livre"}) · ${isBlue ? "Time Azul" : "Time Laranja"}`
+                          : `${el.pokemonName} (${isBlue ? "Time Azul" : "Time Laranja"}) · 1 clique: mudar time · 2 cliques: excluir`
+                      }
+                    >
+                      <div className="token-avatar-ring">
+                        <img
+                          src={el.pokemonSprite}
+                          alt={el.pokemonName}
+                          className="token-sprite-img"
+                          draggable={false}
+                        />
+
+                        {/* Badge de Atleta Vinculado sobreposto */}
+                        {hasMember && (
+                          <div className="token-member-avatar-badge">
+                            {el.memberAvatar ? (
+                              <img
+                                src={el.memberAvatar}
+                                alt={el.memberNickname || el.memberName}
+                                className="token-member-badge-img"
+                              />
+                            ) : (
+                              <span>
+                                {(el.memberNickname || el.memberName || "J").slice(0, 2).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Plaquinha com Nickname e Rota */}
+                      {hasMember && (
+                        <div className="token-member-nametag">
+                          <span className="token-member-name-text">
+                            @{el.memberNickname || el.memberName}
+                          </span>
+                          {el.memberLane && (
+                            <span className="token-member-lane-tag">
+                              {el.memberLane}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+              {/* Banner Flutuante de Ajuda exibido quando não há elementos */}
+              {elements.length === 0 && !dragOverMap && (
+                <div className="map-bottom-hint-banner">
+                  <span>
+                    ARRASTE OU CLIQUE EM UM JOGADOR OU POKÉMON ABAIXO PARA ADICIONAR AO MAPA
+                  </span>
+                </div>
+              )}
             </div>
           </div>
-
         </div>
 
         {/* BARRA LATERAL DIREITA: CONTROLES VERTICAIS DE ZOOM & NAVEGAÇÃO */}
         <div className="tactical-right-zoom-dock">
           <div className="zoom-dock-group">
             {/* Botão Zoom In */}
-            <button 
+            <button
               className="zoom-dock-btn"
-              onClick={() => setZoom(prev => Math.min(300, prev + 15))}
+              onClick={() => setZoom((prev) => Math.min(300, prev + 15))}
               title="Aumentar Zoom (+15%)"
             >
               <ZoomIn size={18} />
             </button>
 
             {/* Display de Zoom Atual (clicável para resetar) */}
-            <button 
+            <button
               className="zoom-dock-value"
               onClick={handleResetZoom}
               title="Clique para resetar para 100% e centralizar"
@@ -1033,16 +1514,16 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
             </button>
 
             {/* Botão Zoom Out */}
-            <button 
+            <button
               className="zoom-dock-btn"
-              onClick={() => setZoom(prev => Math.max(50, prev - 15))}
+              onClick={() => setZoom((prev) => Math.max(50, prev - 15))}
               title="Diminuir Zoom (-15%)"
             >
               <ZoomOut size={18} />
             </button>
 
             {/* Resetar / Ajustar à Tela */}
-            <button 
+            <button
               className="zoom-dock-btn reset"
               onClick={handleResetZoom}
               title="Ajustar e Centralizar Mapa (100%)"
@@ -1056,10 +1537,10 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           {/* Presets Rápidos Verticais */}
           <div className="zoom-dock-presets">
             <span className="dock-section-label">ZOOM</span>
-            {[200, 150, 100, 75, 50].map(level => (
+            {[200, 150, 100, 75, 50].map((level) => (
               <button
                 key={level}
-                className={`zoom-preset-vertical-btn ${zoom === level ? 'active' : ''}`}
+                className={`zoom-preset-vertical-btn ${zoom === level ? "active" : ""}`}
                 onClick={() => {
                   setZoom(level);
                   if (level === 100) setPanOffset({ x: 0, y: 0 });
@@ -1074,145 +1555,250 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* SEÇÃO INFERIOR: CATÁLOGO DE POKÉMON ABAIXO DO MAPA */}
+      {/* SEÇÃO INFERIOR: DECK DE ELENCO FRIBA & CATÁLOGO DE POKÉMON */}
       {/* ========================================================================= */}
       <div className="tactical-bottom-pokemon-deck">
-        <div className="deck-header-bar">
-          {/* Seletor de Equipe para Novos Pokémon */}
-          <div className="deck-team-selector">
-            <span className="deck-label">ADICIONAR PARA:</span>
-            <div className="deck-team-pills">
-              <button 
-                className={`deck-team-btn blue ${teamToAdd === 'blue' ? 'active' : ''}`}
-                onClick={() => setTeamToAdd('blue')}
+        <div className="deck-mode-tabs-bar">
+          <div className="deck-mode-pills">
+            <button
+              className={`deck-mode-tab-btn ${deckTab === "members" ? "active" : ""}`}
+              onClick={() => setDeckTab("members")}
+            >
+              <Users size={15} />
+              <span>ELENCO FRIBA</span>
+              <span className="deck-mode-count">{members.length}</span>
+            </button>
+            <button
+              className={`deck-mode-tab-btn ${deckTab === "pokemons" ? "active" : ""}`}
+              onClick={() => setDeckTab("pokemons")}
+            >
+              <Shield size={15} />
+              <span>CATÁLOGO UNITE-DB</span>
+              <span className="deck-mode-count">{pokemons.length}</span>
+            </button>
+          </div>
+
+          {deckTab === "members" && (
+            <div className="deck-members-quick-actions">
+              <button
+                className="deck-auto-deploy-btn"
+                onClick={handleAutoDeployStarters}
+                title="Posiciona automaticamente os 5 titulares nas rotas oficiais de Theia Sky Ruins (Top, Selva, Bot e Mid)"
               >
-                🔵 Time Azul (Friba)
-              </button>
-              <button 
-                className={`deck-team-btn orange ${teamToAdd === 'orange' ? 'active' : ''}`}
-                onClick={() => setTeamToAdd('orange')}
-              >
-                🔴 Time Laranja (Inimigo)
+                <Sparkles size={14} />
+                <span>Auto-Escalar 5 Titulares</span>
               </button>
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* Campo de Busca */}
-          <div className="deck-search-box">
-            <Search size={14} className="deck-search-icon" />
-            <input 
-              type="text"
-              placeholder="Buscar Pokémon..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {search && (
-              <button className="deck-clear-search" onClick={() => setSearch('')}>
-                <X size={12} />
-              </button>
-            )}
-          </div>
+        {/* MODO 1: ELENCO FRIBA VINCULADO */}
+        {deckTab === "members" ? (
+          <div className="deck-members-container">
+            {members.length === 0 ? (
+              <div className="deck-empty-members">
+                <Users size={28} className="text-secondary opacity-60" />
+                <span>Nenhum atleta cadastrado na equipe ainda. Cadastre membros na aba "Equipe".</span>
+              </div>
+            ) : (
+              <div className="deck-members-grid">
+                {members.map((member) => {
+                  const preferredName = member.mainPokemon?.[0];
+                  const matchedPoke =
+                    (preferredName
+                      ? pokemons.find(
+                          (p) =>
+                            p.name.toLowerCase() === preferredName.toLowerCase() ||
+                            p.id.toLowerCase() === preferredName.toLowerCase()
+                        )
+                      : null) || pokemons[0];
 
-          {/* Pílulas de Filtro de Battle Type */}
-          <div className="deck-role-pills">
-            {['TODOS', 'ATACANTE', 'VELOZ', 'VERSÁTIL', 'DEFENSOR', 'SUPORTE'].map(role => (
-              <button 
-                key={role}
-                className={`deck-role-pill ${roleFilter === role ? 'active' : ''}`}
-                onClick={() => setRoleFilter(role)}
-              >
-                {role}
-              </button>
-            ))}
-          </div>
+                  return (
+                    <div
+                      key={member.id}
+                      className="deck-member-card"
+                      draggable
+                      onDragStart={(e) => handleDragStartFromMember(e, member, matchedPoke)}
+                      onClick={() =>
+                        handleAddMemberToMap(
+                          member,
+                          45 + (Math.random() * 10 - 5),
+                          45 + (Math.random() * 10 - 5),
+                          matchedPoke
+                        )
+                      }
+                      title={`${member.name} (@${member.nickname}) · Pokémon: ${matchedPoke?.name || "Padrão"} · Arraste ou clique para adicionar à prancheta`}
+                    >
+                      <div className="member-card-top">
+                        <div className="member-card-avatar">
+                          {member.avatar ? (
+                            <img src={member.avatar} alt={member.name} />
+                          ) : (
+                            <span className="member-avatar-initials">
+                              {member.name.slice(0, 2).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="member-card-info">
+                          <span className="member-card-fullname" title={member.name}>
+                            {member.name}
+                          </span>
+                          <span className="member-card-nickname">
+                            @{member.nickname}
+                          </span>
+                        </div>
+                      </div>
 
-          {/* Contador de Pokémon */}
-          <div className="deck-count-badge">
-            <span>{filteredPokemons.length} POKÉMONS</span>
-          </div>
+                      <div className="member-card-badges">
+                        <span className={`member-role-badge ${member.status === "Titular" ? "titular" : "reserva"}`}>
+                          {member.status || "Titular"}
+                        </span>
+                        {member.preferredLane && (
+                          <span className="member-lane-badge">
+                            {member.preferredLane}
+                          </span>
+                        )}
+                      </div>
 
-          {/* Linha de Salvar Tática */}
-          <div className="deck-save-box">
-            <div className="save-input-row">
-              <input 
-                type="text" 
-                placeholder="Nome da tática..."
-                value={stratTitle}
-                onChange={(e) => setStratTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSaveCurrentStrategy()}
-              />
-              <button 
-                className="save-strat-btn"
-                onClick={handleSaveCurrentStrategy}
-                title="Salvar Estratégia"
-              >
-                <Bookmark size={14} />
-              </button>
-            </div>
-            {showSaveSuccess && (
-              <div className="save-feedback">
-                <Check size={12} /> Salva!
+                      <div className="member-card-pokemon-preview">
+                        <img
+                          src={matchedPoke?.sprite || "https://unite.pokemon.com/images/pokemon/charizard/roster/roster-charizard.png"}
+                          alt={matchedPoke?.name}
+                          className="member-poke-sprite"
+                        />
+                        <span className="member-poke-name">
+                          {matchedPoke?.name || "Charizard"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
-        </div>
-
-        {/* Grade de Cards com os Pokémon do Unite-DB */}
-        <div className="deck-pokemon-grid">
-          {filteredPokemons.map((pokemon) => {
-            const bgGradient = getRoleCardGradient(pokemon.role);
-
-            return (
-              <div 
-                key={pokemon.id}
-                className="deck-poke-card"
-                style={{ background: bgGradient }}
-                draggable
-                onDragStart={(e) => handleDragStartFromSidebar(e, pokemon)}
-                onClick={() => handleAddPokemonToMap(pokemon, 45 + Math.random() * 10, 45 + Math.random() * 10)}
-                title={`${pokemon.name} (${pokemon.role}) - Clique ou arraste para o mapa`}
-              >
-                <div className="deck-card-art">
-                  <img 
-                    src={pokemon.sprite} 
-                    alt={pokemon.name} 
-                    className="deck-card-img"
-                    loading="lazy"
-                  />
-                </div>
-                <div className="deck-card-footer">
-                  <span>{pokemon.name.toUpperCase()}</span>
-                </div>
+        ) : (
+          /* MODO 2: CATÁLOGO DE POKÉMON COMPLETO */
+          <>
+            <div className="deck-header-bar">
+              {/* Campo de Busca */}
+              <div className="deck-search-box">
+                <Search size={14} className="deck-search-icon" />
+                <input
+                  type="text"
+                  placeholder="Buscar Pokémon..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button
+                    className="deck-clear-search"
+                    onClick={() => setSearch("")}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </div>
-            );
-          })}
-        </div>
+
+              {/* Pílulas de Filtro de Battle Type */}
+              <div className="deck-role-pills">
+                {[
+                  "TODOS",
+                  "ATACANTE",
+                  "VELOZ",
+                  "VERSÁTIL",
+                  "DEFENSOR",
+                  "SUPORTE",
+                ].map((role) => (
+                  <button
+                    key={role}
+                    className={`deck-role-pill ${roleFilter === role ? "active" : ""}`}
+                    onClick={() => setRoleFilter(role)}
+                  >
+                    {role}
+                  </button>
+                ))}
+              </div>
+
+              {/* Contador de Pokémon */}
+              <div className="deck-count-badge">
+                <span>{filteredPokemons.length} POKÉMONS</span>
+              </div>
+            </div>
+
+            {/* Grade de Cards com os Pokémon do Unite-DB */}
+            <div className="deck-pokemon-grid">
+              {filteredPokemons.map((pokemon) => {
+                const bgGradient = getRoleCardGradient(pokemon.role);
+
+                return (
+                  <div
+                    key={pokemon.id}
+                    className="deck-poke-card"
+                    style={{ background: bgGradient }}
+                    draggable
+                    onDragStart={(e) => handleDragStartFromSidebar(e, pokemon)}
+                    onClick={() =>
+                      handleAddPokemonToMap(
+                        pokemon,
+                        45 + Math.random() * 10,
+                        45 + Math.random() * 10,
+                      )
+                    }
+                    title={`${pokemon.name} (${pokemon.role}) - Clique ou arraste para o mapa`}
+                  >
+                    <div className="deck-card-art">
+                      <img
+                        src={pokemon.sprite}
+                        alt={pokemon.name}
+                        className="deck-card-img"
+                        loading="lazy"
+                      />
+                    </div>
+                    <div className="deck-card-footer">
+                      <span>{pokemon.name.toUpperCase()}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* MODAL SIMPLES PARA DIGITAR TEXTO NO MAPA */}
       {textModal.open && (
-        <div className="text-prompt-overlay" onClick={() => setTextModal({ open: false, x: 0, y: 0, text: '' })}>
-          <div className="text-prompt-modal glass-panel" onClick={e => e.stopPropagation()}>
+        <div
+          className="text-prompt-overlay"
+          onClick={() => setTextModal({ open: false, x: 0, y: 0, text: "" })}
+        >
+          <div
+            className="text-prompt-modal glass-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-head">
               <Type size={16} /> Adicionar Anotação Tática
             </div>
-            <input 
+            <input
               type="text"
               autoFocus
               placeholder="Ex: Focar Rayquaza, Gank 8:50, Defender Tier 2..."
               value={textModal.text}
-              onChange={(e) => setTextModal(prev => ({ ...prev, text: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && handleConfirmText()}
+              onChange={(e) =>
+                setTextModal((prev) => ({ ...prev, text: e.target.value }))
+              }
+              onKeyDown={(e) => e.key === "Enter" && handleConfirmText()}
             />
             <div className="modal-actions">
-              <button 
-                className="btn-secondary btn-sm" 
-                onClick={() => setTextModal({ open: false, x: 0, y: 0, text: '' })}
+              <button
+                className="btn-secondary btn-sm"
+                onClick={() =>
+                  setTextModal({ open: false, x: 0, y: 0, text: "" })
+                }
               >
                 Cancelar
               </button>
-              <button 
-                className="btn-primary btn-sm" 
+              <button
+                className="btn-primary btn-sm"
                 onClick={handleConfirmText}
               >
                 Inserir no Mapa
@@ -1635,6 +2221,145 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           border-radius: 10px;
           overflow: hidden;
           box-shadow: 0 16px 45px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.1);
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .map-interactive-stage.drag-over {
+          box-shadow: 0 0 0 3px #F59E0B, 0 0 35px rgba(245, 158, 11, 0.5) !important;
+        }
+
+        .map-drop-target-overlay {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(245, 158, 11, 0.1);
+          pointer-events: none;
+          z-index: 45;
+        }
+
+        .drop-target-badge {
+          background: rgba(10, 15, 29, 0.94);
+          border: 2px dashed #F59E0B;
+          border-radius: 9999px;
+          padding: 9px 24px;
+          color: #F59E0B;
+          font-size: 0.82rem;
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
+          animation: pulseGlow 1.5s infinite alternate ease-in-out;
+        }
+
+        @keyframes pulseGlow {
+          0% { transform: scale(0.97); box-shadow: 0 0 12px rgba(245, 158, 11, 0.3); }
+          100% { transform: scale(1.03); box-shadow: 0 0 24px rgba(245, 158, 11, 0.7); }
+        }
+
+        /* HUD ZOOM SUPERIOR ESQUERDO */
+        .map-hud-zoom-badge {
+          position: absolute;
+          top: 12px;
+          left: 12px;
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          background: rgba(10, 16, 32, 0.78);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          border-radius: 8px;
+          padding: 5px 12px;
+          font-size: 0.68rem;
+          font-weight: 800;
+          color: #94A3B8;
+          letter-spacing: 0.05em;
+          pointer-events: none;
+          z-index: 35;
+          box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+        }
+
+        .hud-zoom-val {
+          color: #38BDF8;
+          font-family: monospace;
+          font-weight: 900;
+        }
+
+        .hud-zoom-sep {
+          opacity: 0.5;
+        }
+
+        .hud-zoom-hint {
+          color: #E2E8F0;
+        }
+
+        /* CONTROLE DE ESPESSURA DE TRAÇO */
+        .tools-stroke-section {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          padding-top: 10px;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          width: 100%;
+        }
+
+        .stroke-preview-box {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          height: 24px;
+        }
+
+        .stroke-preview-dot {
+          border-radius: 50%;
+          display: inline-block;
+          transition: all 0.15s ease;
+        }
+
+        .stroke-preview-val {
+          font-size: 0.65rem;
+          font-weight: 800;
+          font-family: monospace;
+          color: #94A3B8;
+        }
+
+        .stroke-preset-pills {
+          display: flex;
+          gap: 3px;
+          width: 100%;
+          justify-content: center;
+        }
+
+        .stroke-pill-btn {
+          width: 20px;
+          height: 20px;
+          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #94A3B8;
+          font-size: 0.62rem;
+          font-weight: 800;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          transition: all 0.12s;
+        }
+
+        .stroke-pill-btn:hover {
+          background: rgba(255, 255, 255, 0.15);
+          color: #FFFFFF;
+        }
+
+        .stroke-pill-btn.active {
+          background: #0B5FFF;
+          border-color: #38BDF8;
+          color: #FFFFFF;
+          box-shadow: 0 0 8px rgba(11, 95, 255, 0.6);
         }
 
         .map-interactive-stage.select { cursor: default; }
@@ -1665,105 +2390,63 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           z-index: 10;
         }
 
-        /* TOKENS DE POKÉMON NO MAPA */
+        /* TOKENS DE POKÉMON NO MAPA COM ESCALA ADAPTATIVA */
         .map-pokemon-token {
           position: absolute;
-          transform: translate(-50%, -50%);
+          transform: translate(-50%, -60%) scale(var(--token-scale, 1));
           display: flex;
-          flex-direction: column;
           align-items: center;
+          justify-content: center;
           cursor: grab;
           z-index: 25;
-          transition: transform 0.1s ease;
+          transition: transform 0.12s ease;
+          user-select: none;
         }
 
-        .map-pokemon-token:active {
+        .map-pokemon-token:hover {
+          transform: translate(-50%, -50%) scale(calc(var(--token-scale, 1) * 1.15));
+          z-index: 35;
+        }
+
+        .map-pokemon-token.is-dragging {
           cursor: grabbing;
-          transform: translate(-50%, -50%) scale(1.1);
-          z-index: 40;
+          transform: translate(-50%, -50%) scale(calc(var(--token-scale, 1) * 1.22));
+          z-index: 45;
         }
 
         .token-avatar-ring {
-          width: 44px;
-          height: 44px;
+          width: 45px;
+          height: 45px;
           border-radius: 50%;
-          background: rgba(10, 15, 29, 0.9);
-          border: 2.5px solid #0B5FFF;
+          background: rgba(10, 15, 29, 0.94);
+          border: 2px solid #0B5FFF;
+          background: #0B5FFF;
           display: flex;
           align-items: center;
           justify-content: center;
           overflow: hidden;
-          box-shadow: 0 0 14px rgba(11, 95, 255, 0.7);
-          transition: all 0.15s;
+          box-shadow: 0 0 10px rgba(11, 95, 255, 0.8), inset 0 0 4px rgba(0, 0, 0, 0.6);
+          transition: all 0.15s ease;
         }
 
         .map-pokemon-token.team-orange .token-avatar-ring {
           border-color: #F97316;
-          box-shadow: 0 0 14px rgba(249, 115, 22, 0.7);
+          background: #F97316;
+          box-shadow: 0 0 10px rgba(249, 115, 22, 0.8), inset 0 0 4px rgba(0, 0, 0, 0.6);
         }
 
         .token-sprite-img {
-          width: 40px;
-          height: 40px;
+          width: 35px;
+          height: 35px;
           object-fit: contain;
-          filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+          filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+          pointer-events: none;
         }
 
-        .token-name-tag {
-          font-size: 0.62rem;
-          font-weight: 800;
-          color: #FFFFFF;
-          background: rgba(0, 0, 0, 0.85);
-          backdrop-filter: blur(4px);
-          border-radius: 4px;
-          padding: 1px 5px;
-          margin-top: 2px;
-          white-space: nowrap;
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-        }
-
-        /* AÇÕES RÁPIDAS NO TOKEN (HOVER) */
-        .token-quick-actions {
-          position: absolute;
-          top: -18px;
-          display: none;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .map-pokemon-token:hover .token-quick-actions {
-          display: flex;
-        }
-
-        .toggle-team-btn {
-          font-size: 0.55rem;
-          font-weight: 800;
-          color: #FFFFFF;
-          background: #0f172a;
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          border-radius: 4px;
-          padding: 1px 4px;
-          cursor: pointer;
-        }
-
-        .del-token-btn {
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: #DC2626;
-          border: none;
-          color: #FFFFFF;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-        }
-
-        /* TEXTOS ADICIONADOS */
+        /* TEXTOS ADICIONADOS COM ESCALA ADAPTATIVA */
         .map-tactical-label {
           position: absolute;
-          transform: translate(-50%, -50%);
+          transform: translate(-50%, -50%) scale(var(--label-scale, 1));
           background: rgba(10, 15, 29, 0.9);
           border: 1.5px solid #FFFFFF;
           border-radius: 6px;
@@ -2131,6 +2814,319 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           display: flex;
           justify-content: flex-end;
           gap: 8px;
+        }
+
+        /* ESTILOS: ATLETA VINCULADO AO TOKEN TÁTICO NO MAPA */
+        .token-member-avatar-badge {
+          position: absolute;
+          top: -4px;
+          right: -4px;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #0B5FFF;
+          border: 1.5px solid #FFFFFF;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+          z-index: 3;
+        }
+
+        .token-member-badge-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .token-member-avatar-badge span {
+          font-size: 0.5rem;
+          font-weight: 900;
+          color: #FFFFFF;
+          line-height: 1;
+        }
+
+        .token-member-nametag {
+          position: absolute;
+          bottom: -18px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(10, 15, 26, 0.92);
+          border: 1px solid rgba(56, 189, 248, 0.35);
+          backdrop-filter: blur(4px);
+          padding: 1px 5px;
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          white-space: nowrap;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+          pointer-events: none;
+        }
+
+        .token-member-name-text {
+          font-size: 0.55rem;
+          font-weight: 800;
+          color: #38BDF8;
+          letter-spacing: 0.02em;
+        }
+
+        .token-member-lane-tag {
+          font-size: 0.48rem;
+          font-weight: 700;
+          color: #F8FAFC;
+          background: rgba(255, 255, 255, 0.12);
+          padding: 0 3px;
+          border-radius: 2px;
+          text-transform: uppercase;
+        }
+
+        /* ESTILOS: BARRA DE ABAS DO DECK INFERIOR (ELENCO VS POKÉMONS) */
+        .deck-mode-tabs-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          flex-wrap: wrap;
+        }
+
+        .deck-mode-pills {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .deck-mode-tab-btn {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 6px 14px;
+          border-radius: 8px;
+          font-size: 0.72rem;
+          font-weight: 800;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #94A3B8;
+          cursor: pointer;
+          transition: all 0.18s ease;
+        }
+
+        .deck-mode-tab-btn:hover {
+          color: #FFFFFF;
+          background: rgba(255, 255, 255, 0.08);
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .deck-mode-tab-btn.active {
+          background: linear-gradient(135deg, rgba(11, 95, 255, 0.9) 0%, rgba(0, 71, 214, 0.95) 100%);
+          border-color: rgba(56, 189, 248, 0.5);
+          color: #FFFFFF;
+          box-shadow: 0 2px 10px rgba(11, 95, 255, 0.4);
+        }
+
+        .deck-mode-count {
+          background: rgba(0, 0, 0, 0.35);
+          padding: 1px 6px;
+          border-radius: 9999px;
+          font-size: 0.65rem;
+          font-weight: 800;
+        }
+
+        .deck-members-quick-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .deck-auto-deploy-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 14px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #0B5FFF 0%, #0284C7 100%);
+          border: 1px solid rgba(255, 255, 255, 0.25);
+          color: #FFFFFF;
+          font-size: 0.72rem;
+          font-weight: 800;
+          cursor: pointer;
+          box-shadow: 0 2px 10px rgba(11, 95, 255, 0.35);
+          transition: all 0.18s ease;
+        }
+
+        .deck-auto-deploy-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 14px rgba(11, 95, 255, 0.55);
+          border-color: #38BDF8;
+        }
+
+        /* GRADE DE ATLETAS DO ELENCO */
+        .deck-members-container {
+          width: 100%;
+          padding: 4px 0 8px;
+        }
+
+        .deck-empty-members {
+          padding: 30px 16px;
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          color: #94A3B8;
+          font-size: 0.8rem;
+        }
+
+        .deck-members-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 10px;
+        }
+
+        .deck-member-card {
+          background: rgba(13, 21, 38, 0.75);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          backdrop-filter: blur(8px);
+          border-radius: 10px;
+          padding: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          cursor: grab;
+          transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        }
+
+        .deck-member-card:hover {
+          transform: translateY(-3px);
+          border-color: #38BDF8;
+          box-shadow: 0 8px 20px rgba(11, 95, 255, 0.25);
+          background: rgba(18, 30, 56, 0.9);
+        }
+
+        .member-card-top {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .member-card-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #0B5FFF 0%, #1D4ED8 100%);
+          border: 1.5px solid rgba(255, 255, 255, 0.2);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          flex-shrink: 0;
+        }
+
+        .member-card-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .member-avatar-initials {
+          font-size: 0.65rem;
+          font-weight: 800;
+          color: #FFFFFF;
+        }
+
+        .member-card-info {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          flex: 1;
+        }
+
+        .member-card-fullname {
+          font-size: 0.75rem;
+          font-weight: 800;
+          color: #F8FAFC;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .member-card-nickname {
+          font-size: 0.65rem;
+          font-weight: 700;
+          color: #38BDF8;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .member-card-badges {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          flex-wrap: wrap;
+        }
+
+        .member-role-badge {
+          font-size: 0.58rem;
+          font-weight: 800;
+          padding: 2px 6px;
+          border-radius: 4px;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+        }
+
+        .member-role-badge.titular {
+          background: rgba(16, 185, 129, 0.2);
+          border: 1px solid rgba(16, 185, 129, 0.4);
+          color: #34D399;
+        }
+
+        .member-role-badge.reserva {
+          background: rgba(245, 158, 11, 0.2);
+          border: 1px solid rgba(245, 158, 11, 0.4);
+          color: #FBBF24;
+        }
+
+        .member-lane-badge {
+          font-size: 0.58rem;
+          font-weight: 700;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          color: #94A3B8;
+          text-transform: uppercase;
+        }
+
+        .member-card-pokemon-preview {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(0, 0, 0, 0.35);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 6px;
+          padding: 4px 6px;
+        }
+
+        .member-poke-sprite {
+          width: 22px;
+          height: 22px;
+          object-fit: contain;
+          filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+        }
+
+        .member-poke-name {
+          font-size: 0.65rem;
+          font-weight: 700;
+          color: #CBD5E1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
       `}</style>
     </div>

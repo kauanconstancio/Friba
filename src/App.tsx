@@ -5,97 +5,217 @@ import { RosterManagement } from './components/Roster/RosterManagement';
 import { DraftSimulator } from './components/Draft/DraftSimulator';
 import { TacticalMap } from './components/TacticalMap/TacticalMap';
 import { ScrimAgenda } from './components/Agenda/ScrimAgenda';
+import { TeamSettings } from './components/Settings/TeamSettings';
+import { AcceptInviteModal } from './components/Invites/AcceptInviteModal';
+import { LoginPage } from './components/Auth/LoginPage';
+import { ProfilePage } from './components/Profile/ProfilePage';
+import { ShieldCheck } from 'lucide-react';
 import type { 
   Role, 
   TeamMember, 
   ScrimEvent, 
-  StrategyPlan,
-  TeamAnnouncement 
+  StrategyPlan, 
+  TeamAnnouncement,
+  AppUser 
 } from './types';
 import { 
   INITIAL_MEMBERS, 
   INITIAL_SCRIMS, 
-  INITIAL_PRESETS,
+  INITIAL_PRESETS, 
   INITIAL_ANNOUNCEMENTS 
 } from './data/initialData';
-import { ShieldCheck } from 'lucide-react';
+import { 
+  authGetSession,
+  authLogout,
+  dbFetchMembers,
+  dbSaveMember,
+  dbDeleteMember,
+  dbFetchScrims,
+  dbSaveScrim,
+  dbDeleteScrim,
+  dbFetchStrategyPlans,
+  dbSaveStrategyPlan,
+  dbFetchAnnouncements,
+  dbSaveAnnouncement
+} from './services/supabase';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [currentRole, setCurrentRole] = useState<Role>('Dono');
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
+    return authGetSession();
+  });
+  const [currentRole, setCurrentRole] = useState<Role>(currentUser?.role || 'Dono');
   const [teamName] = useState<string>('Friba Esports');
 
-  // Estados com persistência local
+  // Limpar dados mockados antigos do cache
+  useEffect(() => {
+    [
+      'friba_team_members_v3', 
+      'friba_team_scrims_v3', 
+      'friba_team_presets_v3', 
+      'friba_team_announcements_v3', 
+      'friba_db_users_v1', 
+      'friba_db_invites_v1',
+      'friba_current_user_v1'
+    ].forEach(k => localStorage.removeItem(k));
+  }, []);
+
+  // Estados com persistência local e sincronização Supabase
   const [members, setMembers] = useState<TeamMember[]>(() => {
-    const saved = localStorage.getItem('friba_team_members_v3');
+    const saved = localStorage.getItem('friba_team_members_v4');
     return saved ? JSON.parse(saved) : INITIAL_MEMBERS;
   });
 
   const [scrims, setScrims] = useState<ScrimEvent[]>(() => {
-    const saved = localStorage.getItem('friba_team_scrims_v3');
+    const saved = localStorage.getItem('friba_team_scrims_v4');
     return saved ? JSON.parse(saved) : INITIAL_SCRIMS;
   });
 
   const [presets, setPresets] = useState<StrategyPlan[]>(() => {
-    const saved = localStorage.getItem('friba_team_presets_v3');
+    const saved = localStorage.getItem('friba_team_presets_v4');
     return saved ? JSON.parse(saved) : INITIAL_PRESETS;
   });
 
   const [announcements, setAnnouncements] = useState<TeamAnnouncement[]>(() => {
-    const saved = localStorage.getItem('friba_team_announcements_v3');
+    const saved = localStorage.getItem('friba_team_announcements_v4');
     return saved ? JSON.parse(saved) : INITIAL_ANNOUNCEMENTS;
   });
 
+  // Modal de Aceitar Convite / Cadastro de Jogador
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState('');
+
+  // 1. Carregar dados de todas as tabelas do Supabase
   useEffect(() => {
-    localStorage.setItem('friba_team_members_v3', JSON.stringify(members));
+    dbFetchMembers().then(data => { if (data && data.length) setMembers(data); });
+    dbFetchScrims().then(data => { if (data && data.length) setScrims(data); });
+    dbFetchStrategyPlans().then(data => { if (data && data.length) setPresets(data); });
+    dbFetchAnnouncements().then(data => { if (data && data.length) setAnnouncements(data); });
+  }, []);
+
+  // 2. Detectar código de convite via URL (?code=XYZ ou ?join=XYZ)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codeParam = params.get('code') || params.get('join');
+    if (codeParam) {
+      setInviteCodeFromUrl(codeParam);
+      setIsInviteModalOpen(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('friba_auth_user_session', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('friba_auth_user_session');
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    localStorage.setItem('friba_team_members_v4', JSON.stringify(members));
   }, [members]);
 
   useEffect(() => {
-    localStorage.setItem('friba_team_scrims_v3', JSON.stringify(scrims));
+    localStorage.setItem('friba_team_scrims_v4', JSON.stringify(scrims));
   }, [scrims]);
 
   useEffect(() => {
-    localStorage.setItem('friba_team_presets_v3', JSON.stringify(presets));
+    localStorage.setItem('friba_team_presets_v4', JSON.stringify(presets));
   }, [presets]);
 
   useEffect(() => {
-    localStorage.setItem('friba_team_announcements_v3', JSON.stringify(announcements));
+    localStorage.setItem('friba_team_announcements_v4', JSON.stringify(announcements));
   }, [announcements]);
 
-  const handleAddMember = (newMember: TeamMember) => {
-    setMembers(prev => [...prev, newMember]);
-  };
-
-  const handleUpdateMember = (updatedMember: TeamMember) => {
-    setMembers(prev => prev.map(m => m.id === updatedMember.id ? updatedMember : m));
-  };
-
-  const handleDeleteMember = (id: string) => {
-    if (window.confirm('Remover membro da equipe?')) {
-      setMembers(prev => prev.filter(m => m.id !== id));
+  const handleLogout = async () => {
+    if (window.confirm('Deseja realmente sair da sua conta?')) {
+      await authLogout();
+      setCurrentUser(null);
+      setCurrentRole('Jogador');
+      setActiveTab('dashboard');
     }
   };
 
-  const handleAddScrim = (newScrim: ScrimEvent) => {
+  // Manipuladores assíncronos integrados ao Supabase
+  const handleAddMember = async (newMember: TeamMember) => {
+    setMembers(prev => [...prev, newMember]);
+    await dbSaveMember(newMember);
+  };
+
+  const handleUpdateMember = async (updatedMember: TeamMember) => {
+    setMembers(prev => prev.map(m => m.id === updatedMember.id ? updatedMember : m));
+    await dbSaveMember(updatedMember);
+  };
+
+  const handleDeleteMember = async (id: string) => {
+    if (window.confirm('Remover membro da equipe?')) {
+      setMembers(prev => prev.filter(m => m.id !== id));
+      await dbDeleteMember(id);
+    }
+  };
+
+  const handleAddScrim = async (newScrim: ScrimEvent) => {
     setScrims(prev => [newScrim, ...prev]);
+    await dbSaveScrim(newScrim);
   };
 
-  const handleUpdateScrim = (updatedScrim: ScrimEvent) => {
+  const handleUpdateScrim = async (updatedScrim: ScrimEvent) => {
     setScrims(prev => prev.map(s => s.id === updatedScrim.id ? updatedScrim : s));
+    await dbSaveScrim(updatedScrim);
   };
 
-  const handleDeleteScrim = (id: string) => {
+  const handleDeleteScrim = async (id: string) => {
     setScrims(prev => prev.filter(s => s.id !== id));
+    await dbDeleteScrim(id);
   };
 
-  const handleAddAnnouncement = (newAnnouncement: TeamAnnouncement) => {
+  const handleAddAnnouncement = async (newAnnouncement: TeamAnnouncement) => {
     setAnnouncements(prev => [newAnnouncement, ...prev]);
+    await dbSaveAnnouncement(newAnnouncement);
   };
 
-  const handleSaveStrategy = (newPlan: StrategyPlan) => {
+  const handleSaveStrategy = async (newPlan: StrategyPlan) => {
     setPresets(prev => [newPlan, ...prev]);
+    await dbSaveStrategyPlan(newPlan);
     alert(`Tática "${newPlan.title}" salva com sucesso!`);
   };
+
+  // Callback quando o jogador aceita o convite e conclui seu cadastro
+  const handleInviteSuccess = (newMember: TeamMember, newUser: AppUser) => {
+    setMembers(prev => {
+      const exists = prev.some(m => m.id === newMember.id);
+      return exists ? prev.map(m => m.id === newMember.id ? newMember : m) : [...prev, newMember];
+    });
+    setCurrentUser(newUser);
+    setCurrentRole(newUser.role);
+    // Redireciona imediatamente para a aba de equipe para o jogador ver seu card!
+    setActiveTab('roster');
+  };
+
+  // Se o usuário não estiver autenticado, exibe a Página de Login
+  if (!currentUser) {
+    return (
+      <div className="app-root">
+        <div className="app-ambient-background" />
+        <LoginPage
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+            setCurrentRole(user.role);
+          }}
+          onOpenInviteModal={(code) => {
+            setInviteCodeFromUrl(code || '');
+            setIsInviteModalOpen(true);
+          }}
+        />
+        <AcceptInviteModal
+          isOpen={isInviteModalOpen}
+          onClose={() => setIsInviteModalOpen(false)}
+          initialCode={inviteCodeFromUrl}
+          onSuccess={handleInviteSuccess}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="app-root">
@@ -108,6 +228,15 @@ export function App() {
         currentRole={currentRole}
         setCurrentRole={setCurrentRole}
         teamName={teamName}
+        currentUser={currentUser}
+        scrims={scrims}
+        announcements={announcements}
+        members={members}
+        onLogout={handleLogout}
+        onOpenInviteModal={() => {
+          setInviteCodeFromUrl('');
+          setIsInviteModalOpen(true);
+        }}
       />
 
       <main className="app-main-content">
@@ -115,6 +244,7 @@ export function App() {
           {activeTab === 'dashboard' && (
             <Dashboard
               currentRole={currentRole}
+              currentUser={currentUser}
               members={members}
               scrims={scrims}
               announcements={announcements}
@@ -128,6 +258,7 @@ export function App() {
           {activeTab === 'roster' && (
             <RosterManagement
               currentRole={currentRole}
+              currentUser={currentUser}
               members={members}
               onAddMember={handleAddMember}
               onUpdateMember={handleUpdateMember}
@@ -145,12 +276,15 @@ export function App() {
             <TacticalMap
               presets={presets}
               onSaveStrategy={handleSaveStrategy}
+              members={members}
             />
           )}
 
           {activeTab === 'agenda' && (
             <ScrimAgenda
               currentRole={currentRole}
+              currentUser={currentUser}
+              members={members}
               scrims={scrims}
               onAddScrim={handleAddScrim}
               onUpdateScrim={handleUpdateScrim}
@@ -158,8 +292,41 @@ export function App() {
               teamName={teamName}
             />
           )}
+
+          {activeTab === 'profile' && (
+            <ProfilePage
+              currentUser={currentUser}
+              onUpdateCurrentUser={(updatedUser) => {
+                setCurrentUser(updatedUser);
+                setCurrentRole(updatedUser.role);
+              }}
+              members={members}
+              onUpdateMember={handleUpdateMember}
+              onNavigate={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'settings' && (
+            <TeamSettings
+              currentRole={currentRole}
+              currentUser={currentUser}
+              teamName={teamName}
+              onRoleChanged={(newRole) => {
+                setCurrentRole(newRole);
+                setCurrentUser(prev => prev ? ({ ...prev, role: newRole, isOwner: newRole === 'Dono' }) : null);
+              }}
+            />
+          )}
         </div>
       </main>
+
+      {/* Modal de Aceite de Convite e Cadastro Oficial do Jogador */}
+      <AcceptInviteModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        initialCode={inviteCodeFromUrl}
+        onSuccess={handleInviteSuccess}
+      />
 
       <footer className="app-footer">
         <div className="footer-content">
