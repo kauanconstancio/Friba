@@ -9,6 +9,7 @@ import { TeamSettings } from './components/Settings/TeamSettings';
 import { AcceptInviteModal } from './components/Invites/AcceptInviteModal';
 import { LoginPage } from './components/Auth/LoginPage';
 import { ProfilePage } from './components/Profile/ProfilePage';
+import { ToastContainer, showToast } from './components/UI/Toast';
 import { ShieldCheck } from 'lucide-react';
 import type { 
   Role, 
@@ -204,7 +205,7 @@ export function App() {
   const handleSaveStrategy = async (newPlan: StrategyPlan) => {
     setPresets(prev => [newPlan, ...prev]);
     await dbSaveStrategyPlan(newPlan);
-    alert(`Tática "${newPlan.title}" salva com sucesso!`);
+    showToast(`Tática "${newPlan.title}" salva com sucesso!`, 'success');
   };
 
   // Callback quando o jogador aceita o convite e conclui seu cadastro
@@ -223,6 +224,7 @@ export function App() {
   if (!currentUser) {
     return (
       <div className="app-root">
+        <ToastContainer />
         <div className="app-ambient-background" />
         <LoginPage
           onLoginSuccess={(user) => {
@@ -246,6 +248,7 @@ export function App() {
 
   return (
     <div className="app-root">
+      <ToastContainer />
       {/* Camada de difração de luz acelerada por hardware no background */}
       <div className="app-ambient-background" />
 

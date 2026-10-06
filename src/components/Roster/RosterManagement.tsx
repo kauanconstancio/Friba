@@ -19,6 +19,7 @@ import {
 import type { Role, TeamMember, Lane, PokemonRole, AppUser } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
 import { dbCreateInvite } from '../../services/supabase';
+import { showToast } from '../UI/Toast';
 
 interface RosterManagementProps {
   currentRole: Role;
@@ -112,8 +113,9 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
       setGeneratedInvite({ code, link: inviteLink });
       setInviteEmail('');
       setInviteName('');
+      showToast('Convite oficial gerado com sucesso!', 'success');
     } catch (err: any) {
-      alert(`Erro ao gerar convite: ${err.message || 'Tente novamente.'}`);
+      showToast(`Erro ao gerar convite: ${err.message || 'Tente novamente.'}`, 'error');
     } finally {
       setIsCreatingInvite(false);
     }

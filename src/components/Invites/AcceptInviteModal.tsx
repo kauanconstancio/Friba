@@ -13,11 +13,16 @@ import {
   Search, 
   UserCheck,
   ChevronDown,
-  Star
+  Star,
+  Lock,
+  Eye,
+  EyeOff,
+  Mail
 } from 'lucide-react';
 import type { Role, PokemonRole, Lane, TeamMember, TeamInvite, AppUser } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
 import { dbFindInviteByCode, dbAcceptInviteAndRegisterPlayer } from '../../services/supabase';
+import { showToast } from '../UI/Toast';
 
 interface DropdownOption<T extends string> {
   value: T;
@@ -191,6 +196,11 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
   const [inGameId, setInGameId] = useState('');
   const [email, setEmail] = useState('');
   
+  // Senha para acessos futuros
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
   // Específicos para Jogador
   const [gameRole, setGameRole] = useState<PokemonRole>('All-Rounder');
   const [preferredLane, setPreferredLane] = useState<Lane>('Jungle');
@@ -275,7 +285,7 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
   const handleRemovePokemon = (pId: string) => {
     setMainPokemon(prev => {
       if (prev.length <= 1) {
-        alert('Selecione pelo menos 1 Pokémon principal.');
+        showToast('Selecione pelo menos 1 Pokémon principal.', 'warning');
         return prev;
       }
       return prev.filter(id => id !== pId);
@@ -302,7 +312,28 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
     if (!invite) return;
 
     if (!name.trim() || !nickname.trim() || !discord.trim() || !inGameId.trim()) {
-      alert('Por favor, preencha todos os campos obrigatórios (*)');
+      showToast('Por favor, preencha todos os campos obrigatórios (*)', 'warning');
+      return;
+    }
+
+    const finalEmail = (email.trim() || invite.email || '').trim();
+    if (!finalEmail) {
+      showToast('Por favor, informe seu e-mail para acesso ao sistema.', 'warning');
+      return;
+    }
+
+    if (!password.trim()) {
+      showToast('Por favor, crie uma senha para acessar sua conta.', 'warning');
+      return;
+    }
+
+    if (password.trim().length < 6) {
+      showToast('A senha deve ter no mínimo 6 caracteres.', 'warning');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      showToast('As senhas não coincidem. Confirme a mesma senha nos dois campos.', 'warning');
       return;
     }
 
@@ -317,7 +348,9 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
         avatar: activeAvatar,
         discord: discord.trim(),
         inGameId: inGameId.trim(),
-        email: email.trim() || invite.email,
+        email: finalEmail,
+        password: password.trim(),
+        role: invite.role,
         gameRole,
         preferredLane,
         mainPokemon,
@@ -338,13 +371,14 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
         // Confetti fallback
       }
 
+      showToast(`Bem-vindo(a) à Friba, ${nickname.trim()}! Cadastro concluído com sucesso.`, 'success');
       setStep('success');
       setTimeout(() => {
         onSuccess(member, user);
         onClose();
       }, 2000);
     } catch (err: any) {
-      alert(err.message || 'Falha ao concluir cadastro.');
+      showToast(err.message || 'Falha ao concluir cadastro.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -512,10 +546,74 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
                 </div>
               </div>
 
-              {/* Seção 2: Avatar */}
+              {/* Seção 2: Credenciais de Acesso & Segurança */}
+              <div className="form-section-title">
+                <Lock size={14} color="#D61F26" />
+                <span>2. Dados de Acesso & Senha (Para Logar no Sistema)</span>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label className="form-label">E-mail de Login *</label>
+                <div className="input-with-icon-wrap">
+                  <Mail size={16} className="input-lead-icon" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="seuemail@exemplo.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="form-input with-lead-icon"
+                  />
+                </div>
+              </div>
+
+              <div className="grid-2-cols" style={{ marginBottom: '16px' }}>
+                <div className="form-group">
+                  <label className="form-label">Criar Senha * (Mín. 6 dígitos)</label>
+                  <div className="input-with-icon-wrap">
+                    <Lock size={16} className="input-lead-icon" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      placeholder="Crie sua senha segura"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="form-input with-lead-icon with-tail-btn"
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowPassword(!showPassword)}
+                      tabIndex={-1}
+                      title={showPassword ? 'Ocultar senha' : 'Ver senha'}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Confirmar Senha *</label>
+                  <div className="input-with-icon-wrap">
+                    <Lock size={16} className="input-lead-icon" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      placeholder="Repita a senha criada"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="form-input with-lead-icon"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção 3: Avatar */}
               <div className="form-section-title">
                 <Sparkles size={14} color="#34D399" />
-                <span>2. Foto de Perfil / Avatar</span>
+                <span>3. Foto de Perfil / Avatar</span>
               </div>
 
               <div className="avatar-selection-box">
@@ -552,12 +650,12 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
                 </div>
               </div>
 
-              {/* Seção 3: Informações do Jogo (se for Jogador) */}
+              {/* Seção 4: Informações do Jogo (se for Jogador) */}
               {invite.role === 'Jogador' ? (
                 <>
                   <div className="form-section-title">
                     <Gamepad2 size={14} color="#F87171" />
-                    <span>3. Especialidade no Pokémon Unite</span>
+                    <span>4. Especialidade no Pokémon Unite</span>
                   </div>
 
                   <div className="grid-3-cols">
@@ -1058,6 +1156,49 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
           border-color: var(--friba-blue);
           background: rgba(255, 255, 255, 0.08);
           box-shadow: 0 0 12px rgba(11, 95, 255, 0.3);
+        }
+
+        .input-with-icon-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+          width: 100%;
+        }
+
+        .input-lead-icon {
+          position: absolute;
+          left: 12px;
+          color: #94A3B8;
+          pointer-events: none;
+        }
+
+        .form-input.with-lead-icon {
+          padding-left: 38px;
+          width: 100%;
+        }
+
+        .form-input.with-tail-btn {
+          padding-right: 40px;
+        }
+
+        .password-toggle-btn {
+          position: absolute;
+          right: 8px;
+          background: transparent;
+          border: none;
+          color: #94A3B8;
+          cursor: pointer;
+          padding: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 6px;
+          transition: all 0.2s ease;
+        }
+
+        .password-toggle-btn:hover {
+          color: #FFFFFF;
+          background: rgba(255, 255, 255, 0.1);
         }
 
         /* Custom Select Styled Components */

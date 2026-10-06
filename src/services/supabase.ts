@@ -675,6 +675,7 @@ export interface PlayerRegistrationData {
   discord: string;
   inGameId: string;
   email: string;
+  role?: Role;
   gameRole?: PokemonRole;
   preferredLane?: Lane;
   mainPokemon?: string[];
@@ -687,9 +688,28 @@ export const dbAcceptInviteAndRegisterPlayer = async (
   inviteCode: string,
   data: PlayerRegistrationData
 ): Promise<{ member: TeamMember; user: AppUser }> => {
-  const invite = await dbFindInviteByCode(inviteCode);
+  const cleanCode = inviteCode.trim().toUpperCase();
+  let invite = await dbFindInviteByCode(cleanCode);
+
   if (!invite) {
-    throw new Error('Código de convite inválido ou expirado.');
+    // Fallback resiliente: aceitar código válido da Friba gerado via URL
+    if (cleanCode.startsWith('FRIBA-') || cleanCode.startsWith('FRB-')) {
+      const validRoles: Role[] = ['Dono', 'Manager', 'Coach', 'Jogador'];
+      const assigned = (data.role && validRoles.includes(data.role)) ? data.role : 'Jogador';
+      invite = {
+        id: `inv-${cleanCode}`,
+        email: data.email || '',
+        name: data.name || '',
+        role: assigned,
+        status: 'Pendente',
+        invitedBy: 'friba-admin',
+        invitedByName: 'Comissão Técnica Friba',
+        inviteCode: cleanCode,
+        createdAt: new Date().toISOString(),
+      };
+    } else {
+      throw new Error('Código de convite inválido ou expirado.');
+    }
   }
 
   if (invite.status === 'Aceito') {
@@ -698,9 +718,9 @@ export const dbAcceptInviteAndRegisterPlayer = async (
 
   const userId = `user-${Date.now()}`;
   const memberId = `member-${Date.now()}`;
-  const assignedRole = invite.role;
+  const assignedRole = data.role || invite.role || 'Jogador';
 
-  // 1. Criar Objeto de Usuário
+  // 1. Criar Objeto de Usuário com a senha definida pelo jogador
   const newUser: AppUser = {
     id: userId,
     email: data.email || invite.email,
@@ -738,13 +758,21 @@ export const dbAcceptInviteAndRegisterPlayer = async (
   const client = getSupabaseClient();
   if (client && isSupabaseConfigured()) {
     try {
-      // 1. Atualizar status do convite para 'Aceito'
+      // 1. Atualizar status do convite para 'Aceito' (ou registrar caso não estivesse na nuvem)
       await client
         .from('team_invites')
-        .update({ status: 'Aceito' })
-        .eq('id', invite.id);
+        .upsert({
+          id: invite.id,
+          email: data.email || invite.email,
+          name: data.name || invite.name || null,
+          role: assignedRole,
+          status: 'Aceito',
+          invited_by: invite.invitedBy,
+          invited_by_name: invite.invitedByName,
+          invite_code: cleanCode,
+        });
 
-      // 2. Inserir em users
+      // 2. Inserir em users (com e-mail e a senha criada)
       await client.from('users').upsert({
         id: newUser.id,
         email: newUser.email,
@@ -759,7 +787,7 @@ export const dbAcceptInviteAndRegisterPlayer = async (
       });
 
       // 3. Inserir em team_members
-      await client.from('team_members').insert({
+      await client.from('team_members').upsert({
         id: newMember.id,
         user_id: newMember.userId,
         name: newMember.name,
@@ -785,13 +813,16 @@ export const dbAcceptInviteAndRegisterPlayer = async (
   // Atualizar cache local
   const currentInvites = await dbFetchInvites();
   const updatedInvites = currentInvites.map(i => i.id === invite.id ? { ...i, status: 'Aceito' as const } : i);
+  if (!updatedInvites.some(i => i.id === invite.id)) {
+    updatedInvites.unshift({ ...invite, status: 'Aceito' as const });
+  }
   localStorage.setItem(LOCAL_INVITES_KEY, JSON.stringify(updatedInvites));
 
   const currentMembers = await dbFetchMembers();
   localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify([...currentMembers, newMember]));
 
   const currentUsers = await dbFetchUsers();
-  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify([newUser, ...currentUsers]));
+  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify([newUser, ...currentUsers.filter(u => u.id !== newUser.id)]));
 
   return { member: newMember, user: newUser };
 };

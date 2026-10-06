@@ -21,6 +21,7 @@ import {
 import type { AppUser, TeamMember, PokemonRole, Lane } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
 import { dbCreateOrUpdateUser, dbSaveMember } from '../../services/supabase';
+import { showToast } from '../UI/Toast';
 
 interface ProfilePageProps {
   currentUser: AppUser;
@@ -248,7 +249,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const handleRemovePokemon = (pId: string) => {
     setMainPokemon(prev => {
       if (prev.length <= 1) {
-        alert('Selecione pelo menos 1 Pokémon principal.');
+        showToast('Selecione pelo menos 1 Pokémon principal.', 'warning');
         return prev;
       }
       return prev.filter(id => id !== pId);

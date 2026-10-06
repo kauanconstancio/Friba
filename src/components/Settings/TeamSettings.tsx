@@ -24,6 +24,7 @@ import {
   dbDeleteUser,
   dbDeleteInvite
 } from '../../services/supabase';
+import { showToast } from '../UI/Toast';
 
 interface TeamSettingsProps {
   currentRole: Role;
@@ -99,9 +100,10 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
       setInviteEmail('');
       setInviteName('');
       setInviteRole('Jogador');
+      showToast('Convite oficial gerado com sucesso!', 'success');
     } catch (err) {
       console.error('Erro ao criar convite:', err);
-      alert('Falha ao enviar convite. Tente novamente.');
+      showToast('Falha ao enviar convite. Tente novamente.', 'error');
     } finally {
       setIsSubmittingInvite(false);
     }
@@ -122,22 +124,24 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
     try {
       await dbUpdateUserRole(userId, newRole);
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole, isOwner: newRole === 'Dono' } : u));
+      showToast('Cargo atualizado com sucesso!', 'success');
     } catch (err) {
       console.error('Erro ao atualizar cargo:', err);
-      alert('Não foi possível atualizar o cargo.');
+      showToast('Não foi possível atualizar o cargo.', 'error');
     }
   };
 
   // Remover usuário
   const handleDeleteUser = async (userId: string, userName: string) => {
     if (userId === currentUser.id) {
-      alert('Você não pode remover seu próprio usuário.');
+      showToast('Você não pode remover seu próprio usuário.', 'warning');
       return;
     }
 
     if (window.confirm(`Tem certeza que deseja remover ${userName} da organização?`)) {
       await dbDeleteUser(userId);
       setUsers(prev => prev.filter(u => u.id !== userId));
+      showToast(`Usuário ${userName} removido da organização.`, 'info');
     }
   };
 
