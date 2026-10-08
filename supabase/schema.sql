@@ -203,3 +203,17 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
 CREATE INDEX IF NOT EXISTS idx_invites_code ON public.team_invites(invite_code);
 CREATE INDEX IF NOT EXISTS idx_members_role ON public.team_members(role);
 CREATE INDEX IF NOT EXISTS idx_scrims_date ON public.scrim_events(date);
+
+-- ==========================================================
+-- 10. HABILITAR SUPABASE REALTIME (OPCIONAL/RECOMENDADO)
+-- Permite que novas adições no elenco atualizem na tela instantaneamente
+-- ==========================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.team_members;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.team_invites;
+  END IF;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;

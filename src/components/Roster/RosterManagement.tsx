@@ -12,11 +12,13 @@ import {
   Copy,
   Send,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Mail
 } from 'lucide-react';
 import type { Role, TeamMember, Lane, PokemonRole, AppUser } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
 import { dbCreateInvite } from '../../services/supabase';
+import { openNativeEmailClient, generateInviteEmailContent } from '../../services/emailService';
 import { showToast } from '../UI/toastService';
 
 interface RosterManagementProps {
@@ -48,9 +50,16 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<Role>('Jogador');
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
-  const [generatedInvite, setGeneratedInvite] = useState<{ code: string; link: string } | null>(null);
+  const [generatedInvite, setGeneratedInvite] = useState<{
+    code: string;
+    link: string;
+    email: string;
+    name?: string;
+    role: Role;
+  } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedEmailText, setCopiedEmailText] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const handleManualSync = async () => {
@@ -112,11 +121,14 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
     try {
       const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
       const code = `FRB-${randomSuffix}`;
+      const email = inviteEmail.trim();
+      const name = inviteName.trim();
+      const role = inviteRole;
 
       await dbCreateInvite({
-        email: inviteEmail.trim(),
-        name: inviteName.trim() || undefined,
-        role: inviteRole,
+        email,
+        name: name || undefined,
+        role,
         status: 'Pendente',
         invitedBy: currentUser?.id || 'dono',
         invitedByName: currentUser?.name ? `${currentUser.nickname || currentUser.name} (${currentUser.role})` : 'Dono da Equipe',
@@ -124,10 +136,18 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
       });
 
       const inviteLink = `${window.location.origin}?code=${code}`;
-      setGeneratedInvite({ code, link: inviteLink });
+      const inviteData = {
+        code,
+        link: inviteLink,
+        email,
+        name: name || undefined,
+        role,
+      };
+
+      setGeneratedInvite(inviteData);
       setInviteEmail('');
       setInviteName('');
-      showToast('Convite oficial gerado com sucesso!', 'success');
+      showToast('Convite oficial registrado com sucesso!', 'success');
     } catch (err: any) {
       showToast(`Erro ao gerar convite: ${err.message || 'Tente novamente.'}`, 'error');
     } finally {
@@ -135,11 +155,41 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
     }
   };
 
+  const handleSendEmail = () => {
+    if (!generatedInvite) return;
+    openNativeEmailClient({
+      toEmail: generatedInvite.email,
+      toName: generatedInvite.name,
+      role: generatedInvite.role,
+      inviteCode: generatedInvite.code,
+      inviteLink: generatedInvite.link,
+      invitedByName: currentUser?.name || 'Comissão Técnica Friba',
+    });
+    showToast('Cliente de e-mail aberto para envio!', 'info');
+  };
+
+  const handleCopyFormattedEmail = () => {
+    if (!generatedInvite) return;
+    const { bodyText } = generateInviteEmailContent({
+      toEmail: generatedInvite.email,
+      toName: generatedInvite.name,
+      role: generatedInvite.role,
+      inviteCode: generatedInvite.code,
+      inviteLink: generatedInvite.link,
+      invitedByName: currentUser?.name || 'Comissão Técnica Friba',
+    });
+    navigator.clipboard.writeText(bodyText);
+    setCopiedEmailText(true);
+    setTimeout(() => setCopiedEmailText(false), 2000);
+    showToast('Texto oficial do e-mail copiado para a área de transferência!', 'success');
+  };
+
   const handleCopyLink = () => {
     if (!generatedInvite) return;
     navigator.clipboard.writeText(generatedInvite.link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
+    showToast('Link do convite copiado!', 'info');
   };
 
   const handleCopyCode = () => {
@@ -147,6 +197,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
     navigator.clipboard.writeText(generatedInvite.code);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
+    showToast('Código do convite copiado!', 'info');
   };
 
 
@@ -635,15 +686,67 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                 }}>
                   <Sparkles size={20} color="#10B981" />
                   <div>
-                    <h4 style={{ color: '#6EE7B7', fontSize: '0.88rem', margin: 0 }}>Convite gerado com sucesso!</h4>
+                    <h4 style={{ color: '#6EE7B7', fontSize: '0.88rem', margin: 0 }}>Convite gerado e registrado na nuvem!</h4>
                     <span style={{ color: '#A7F3D0', fontSize: '0.75rem' }}>
-                      Envie o link ou código abaixo para o membro completar seu cadastro oficial.
+                      Destinatário: <strong>{generatedInvite.email}</strong> • Cargo: <strong>{generatedInvite.role}</strong>
                     </span>
                   </div>
                 </div>
 
+                {/* AÇÃO PRINCIPAL: DISPARAR E-MAIL */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={handleSendEmail}
+                    style={{
+                      background: 'linear-gradient(135deg, #0B5FFF 0%, #2563EB 100%)',
+                      border: 'none',
+                      color: 'white',
+                      padding: '12px 18px',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      width: '100%',
+                      boxShadow: '0 4px 15px rgba(11, 95, 255, 0.35)',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <Mail size={16} />
+                    <span>Enviar E-mail para {generatedInvite.email}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyFormattedEmail}
+                    style={{
+                      background: copiedEmailText ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.16)',
+                      color: copiedEmailText ? '#6EE7B7' : '#E2E8F0',
+                      padding: '10px 16px',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontSize: '0.84rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      width: '100%',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {copiedEmailText ? <Check size={14} /> : <Copy size={14} />}
+                    <span>{copiedEmailText ? 'E-mail Completo Copiado!' : 'Copiar Texto Completo do E-mail'}</span>
+                  </button>
+                </div>
+
                 <div className="form-group">
-                  <label>Link Direto de Cadastro</label>
+                  <label>Link Direto de Pré-cadastro</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <input
                       type="text"

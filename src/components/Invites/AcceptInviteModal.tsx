@@ -290,24 +290,17 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
   }, [initialCode]);
 
   const handleRemovePokemon = (pId: string) => {
-    setMainPokemon(prev => {
-      if (prev.length <= 1) {
-        showToast('Selecione pelo menos 1 Pokémon principal.', 'warning');
-        return prev;
-      }
-      return prev.filter(id => id !== pId);
-    });
+    setMainPokemon(prev => prev.filter(id => id !== pId));
   };
 
   const handleTogglePokemon = (pId: string) => {
     setMainPokemon(prev => {
       if (prev.includes(pId)) {
-        if (prev.length <= 1) return prev; // manter pelo menos 1
         return prev.filter(id => id !== pId);
       } else {
         if (prev.length >= 3) {
-          // substituir o último selecionado
-          return [prev[0], prev[1], pId];
+          showToast('Você já selecionou 3 Pokémon. Remova um para escolher outro ou troque um dos slots.', 'info');
+          return prev;
         }
         return [...prev, pId];
       }
@@ -318,8 +311,23 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
     e.preventDefault();
     if (!invite) return;
 
-    if (!name.trim() || !nickname.trim() || !discord.trim() || !inGameId.trim()) {
-      showToast('Por favor, preencha todos os campos obrigatórios (*)', 'warning');
+    if (!name.trim()) {
+      showToast('Por favor, informe seu Nome Completo.', 'warning');
+      return;
+    }
+
+    if (!nickname.trim()) {
+      showToast('Por favor, informe seu Nickname in-game no Pokémon Unite.', 'warning');
+      return;
+    }
+
+    if (!inGameId.trim()) {
+      showToast('Por favor, informe seu ID no jogo Pokémon Unite.', 'warning');
+      return;
+    }
+
+    if (mainPokemon.length !== 3) {
+      showToast(`É obrigatório selecionar exatamente 3 Pokémon preferidos. Atualmente você escolheu ${mainPokemon.length}.`, 'warning');
       return;
     }
 
@@ -329,13 +337,8 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
       return;
     }
 
-    if (!password.trim()) {
-      showToast('Por favor, crie uma senha para acessar sua conta.', 'warning');
-      return;
-    }
-
-    if (password.trim().length < 6) {
-      showToast('A senha deve ter no mínimo 6 caracteres.', 'warning');
+    if (!password.trim() || password.trim().length < 6) {
+      showToast('Por favor, defina uma senha de acesso com no mínimo 6 dígitos.', 'warning');
       return;
     }
 
@@ -351,9 +354,9 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
       const { member, user } = await dbAcceptInviteAndRegisterPlayer(invite.inviteCode, {
         name: name.trim(),
         nickname: nickname.trim(),
-        tag: `@${nickname.trim()}`,
+        tag: `@FRIBA · ${nickname.trim().toUpperCase()}`,
         avatar: activeAvatar,
-        discord: discord.trim(),
+        discord: discord.trim() || `@${nickname.trim()}`,
         inGameId: inGameId.trim(),
         email: finalEmail,
         password: password.trim(),
@@ -369,8 +372,8 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
       // Disparar confetes de boas-vindas
       try {
         confetti({
-          particleCount: 120,
-          spread: 80,
+          particleCount: 150,
+          spread: 90,
           origin: { y: 0.6 },
           colors: ['#D61F26', '#0B5FFF', '#FFFFFF', '#F59E0B'],
         });
@@ -693,15 +696,20 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
                     <div className="pokemon-mains-header">
                       <div className="pokemon-mains-title-box">
                         <label className="form-label" style={{ margin: 0 }}>
-                          Pokémon Principais / Mains (Até 3) *
+                          3 Pokémon Preferidos (Obrigatório) *
                         </label>
                         <span className="pokemon-mains-hint">
-                          Escolha até 3 Pokémon para representar suas preferências competitivas.
+                          Selecione os 3 Pokémon com os quais você mais atua no competitivo.
                         </span>
                       </div>
-                      <div className="mains-counter-pill">
-                        <Star size={13} color="#F59E0B" />
-                        <span><strong>{mainPokemon.length}</strong> de 3 selecionados</span>
+                      <div className="mains-counter-pill" style={{ 
+                        borderColor: mainPokemon.length === 3 ? '#10B981' : '#F59E0B',
+                        background: mainPokemon.length === 3 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)'
+                      }}>
+                        <Star size={13} color={mainPokemon.length === 3 ? '#10B981' : '#F59E0B'} />
+                        <span style={{ color: mainPokemon.length === 3 ? '#6EE7B7' : '#FCD34D' }}>
+                          <strong>{mainPokemon.length}</strong> de 3 selecionados {mainPokemon.length === 3 ? '✓' : `(Falta ${3 - mainPokemon.length})`}
+                        </span>
                       </div>
                     </div>
 

@@ -120,11 +120,11 @@ export function App() {
 
   // 1. Carregar dados de todas as tabelas do Supabase
   useEffect(() => {
-    refreshMembers();
+    dbFetchMembers().then(data => { if (data && data.length) setMembers(data); });
     dbFetchScrims().then(data => { if (data && data.length) setScrims(data); });
     dbFetchStrategyPlans().then(data => { if (data && data.length) setPresets(data); });
     dbFetchAnnouncements().then(data => { if (data && data.length) setAnnouncements(data); });
-  }, [refreshMembers]);
+  }, []);
 
   // Sincronizar membros ao focar na janela ou voltar para a aba
   useEffect(() => {
@@ -148,9 +148,9 @@ export function App() {
   // Sincronizar ao abrir a aba de elenco
   useEffect(() => {
     if (activeTab === 'roster') {
-      refreshMembers();
+      dbFetchMembers().then(data => { if (data && data.length) setMembers(data); });
     }
-  }, [activeTab, refreshMembers]);
+  }, [activeTab]);
 
   // Ouvinte em tempo real do Supabase para alterações no elenco
   useEffect(() => {
