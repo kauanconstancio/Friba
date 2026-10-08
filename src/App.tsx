@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { RosterManagement } from './components/Roster/RosterManagement';
@@ -29,6 +29,7 @@ import {
 import { 
   authGetSession,
   authLogout,
+  getSupabaseClient,
   dbFetchMembers,
   dbSaveMember,
   dbDeleteMember,
@@ -106,13 +107,75 @@ export function App() {
     return code ? code.toUpperCase().trim() : '';
   });
 
+  const refreshMembers = useCallback(async () => {
+    try {
+      const data = await dbFetchMembers();
+      if (data && data.length) {
+        setMembers(data);
+      }
+    } catch (err) {
+      console.warn('Erro ao atualizar membros da equipe:', err);
+    }
+  }, []);
+
   // 1. Carregar dados de todas as tabelas do Supabase
   useEffect(() => {
-    dbFetchMembers().then(data => { if (data && data.length) setMembers(data); });
+    refreshMembers();
     dbFetchScrims().then(data => { if (data && data.length) setScrims(data); });
     dbFetchStrategyPlans().then(data => { if (data && data.length) setPresets(data); });
     dbFetchAnnouncements().then(data => { if (data && data.length) setAnnouncements(data); });
-  }, []);
+  }, [refreshMembers]);
+
+  // Sincronizar membros ao focar na janela ou voltar para a aba
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshMembers();
+    };
+    window.addEventListener('focus', handleFocus);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshMembers();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [refreshMembers]);
+
+  // Sincronizar ao abrir a aba de elenco
+  useEffect(() => {
+    if (activeTab === 'roster') {
+      refreshMembers();
+    }
+  }, [activeTab, refreshMembers]);
+
+  // Ouvinte em tempo real do Supabase para alterações no elenco
+  useEffect(() => {
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    try {
+      const channel = client
+        .channel('friba_members_live_sync')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'team_members' },
+          () => {
+            refreshMembers();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        client.removeChannel(channel);
+      };
+    } catch (err) {
+      console.warn('Falha ao conectar canal Realtime do Supabase:', err);
+    }
+  }, [refreshMembers]);
 
 
   useEffect(() => {
@@ -277,6 +340,7 @@ export function App() {
               onAddMember={handleAddMember}
               onUpdateMember={handleUpdateMember}
               onDeleteMember={handleDeleteMember}
+              onRefreshMembers={refreshMembers}
             />
           )}
 

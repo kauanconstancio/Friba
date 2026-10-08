@@ -17,20 +17,24 @@ import {
   INITIAL_ANNOUNCEMENTS 
 } from '../data/initialData';
 
-// Chaves padrão via variáveis de ambiente Vite ou salvas no localStorage
+// Credenciais oficiais da Friba (Supabase Cloud)
+export const DEFAULT_SUPABASE_URL = 'https://qjsawrztdfspuorfdaey.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqc2F3cnp0ZGZzcHVvcmZkYWV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwNDk2OTEsImV4cCI6MjEwNjYyNTY5MX0.CHs_BJujgCfuKNktrVG-ajE1SWKih8guTzZyS48q-Qc';
+
+// Chaves salvas no localStorage
 const STORAGE_KEY_URL = 'friba_supabase_url';
 const STORAGE_KEY_ANON = 'friba_supabase_anon_key';
 
 export const getSupabaseConfig = () => {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  const envUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
+  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
 
-  const localUrl = localStorage.getItem(STORAGE_KEY_URL) || '';
-  const localKey = localStorage.getItem(STORAGE_KEY_ANON) || '';
+  const localUrl = localStorage.getItem(STORAGE_KEY_URL)?.trim() || '';
+  const localKey = localStorage.getItem(STORAGE_KEY_ANON)?.trim() || '';
 
   return {
-    url: localUrl || envUrl || '',
-    key: localKey || envKey || '',
+    url: localUrl || envUrl || DEFAULT_SUPABASE_URL,
+    key: localKey || envKey || DEFAULT_SUPABASE_ANON_KEY,
   };
 };
 
@@ -445,8 +449,10 @@ export const dbFetchInvites = async (): Promise<TeamInvite[]> => {
 export const dbCreateInvite = async (
   inviteData: Omit<TeamInvite, 'id' | 'createdAt'>
 ): Promise<TeamInvite> => {
+  const cleanCode = inviteData.inviteCode.trim().toUpperCase();
   const newInvite: TeamInvite = {
     ...inviteData,
+    inviteCode: cleanCode,
     id: `inv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     createdAt: new Date().toISOString(),
   };
@@ -462,35 +468,28 @@ export const dbCreateInvite = async (
         status: newInvite.status,
         invited_by: newInvite.invitedBy,
         invited_by_name: newInvite.invitedByName,
-        invite_code: newInvite.inviteCode,
+        invite_code: cleanCode,
       };
 
       const { data, error } = await client
         .from('team_invites')
-        .insert(payload)
+        .upsert(payload, { onConflict: 'invite_code' })
         .select()
         .single();
 
-      if (!error && data) {
-        return {
-          id: data.id,
-          email: data.email,
-          name: data.name || '',
-          role: data.role as Role,
-          status: data.status,
-          invitedBy: data.invited_by,
-          invitedByName: data.invited_by_name,
-          inviteCode: data.invite_code,
-          createdAt: data.created_at,
-        };
+      if (error) {
+        console.error('Erro ao registrar convite no Supabase:', error);
+      } else if (data) {
+        newInvite.id = data.id;
+        newInvite.createdAt = data.created_at;
       }
     } catch (err) {
-      console.warn('Erro ao criar convite no Supabase:', err);
+      console.error('Falha de conexão ao criar convite no Supabase:', err);
     }
   }
 
   const invites = await dbFetchInvites();
-  const updated = [newInvite, ...invites];
+  const updated = [newInvite, ...invites.filter(i => i.inviteCode !== cleanCode)];
   localStorage.setItem(LOCAL_INVITES_KEY, JSON.stringify(updated));
   return newInvite;
 };
@@ -556,25 +555,29 @@ export const dbFetchMembers = async (): Promise<TeamMember[]> => {
         .select('*')
         .order('created_at', { ascending: true });
 
-      if (!error && data && data.length > 0) {
-        return data.map((item: any) => ({
-          id: item.id,
-          userId: item.user_id || undefined,
-          name: item.name,
-          nickname: item.nickname,
-          tag: item.tag || '',
-          role: item.role as Role,
-          avatar: item.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
-          discord: item.discord || '',
-          inGameId: item.in_game_id || '',
-          email: item.email || '',
-          gameRole: (item.game_role as PokemonRole) || 'All-Rounder',
-          preferredLane: (item.preferred_lane as Lane) || 'Jungle',
-          mainPokemon: Array.isArray(item.main_pokemon) ? item.main_pokemon : ['ceruledge'],
-          status: (item.status as 'Titular' | 'Reserva') || 'Titular',
-          specialtyOrTitle: item.specialty_or_title || '',
-          coachNotes: item.coach_notes || '',
-        }));
+      if (!error && data) {
+        if (data.length > 0) {
+          const membersList: TeamMember[] = data.map((item: any) => ({
+            id: item.id,
+            userId: item.user_id || undefined,
+            name: item.name,
+            nickname: item.nickname,
+            tag: item.tag || '',
+            role: item.role as Role,
+            avatar: item.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+            discord: item.discord || '',
+            inGameId: item.in_game_id || '',
+            email: item.email || '',
+            gameRole: (item.game_role as PokemonRole) || 'All-Rounder',
+            preferredLane: (item.preferred_lane as Lane) || 'Jungle',
+            mainPokemon: Array.isArray(item.main_pokemon) ? item.main_pokemon : ['ceruledge'],
+            status: (item.status as 'Titular' | 'Reserva') || 'Titular',
+            specialtyOrTitle: item.specialty_or_title || '',
+            coachNotes: item.coach_notes || '',
+          }));
+          localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify(membersList));
+          return membersList;
+        }
       }
     } catch (err) {
       console.warn('Erro ao buscar membros no Supabase, usando armazenamento local:', err);
@@ -689,6 +692,7 @@ export const dbAcceptInviteAndRegisterPlayer = async (
   data: PlayerRegistrationData
 ): Promise<{ member: TeamMember; user: AppUser }> => {
   const cleanCode = inviteCode.trim().toUpperCase();
+  const client = getSupabaseClient();
   let invite = await dbFindInviteByCode(cleanCode);
 
   if (!invite) {
@@ -716,21 +720,22 @@ export const dbAcceptInviteAndRegisterPlayer = async (
     throw new Error('Este convite já foi utilizado anteriormente.');
   }
 
-  const userId = `user-${Date.now()}`;
-  const memberId = `member-${Date.now()}`;
+  let userId = `user-${Date.now()}`;
+  let memberId = `member-${Date.now()}`;
   const assignedRole = data.role || invite.role || 'Jogador';
+  const targetEmail = (data.email || invite.email || '').trim().toLowerCase();
 
   // 1. Criar Objeto de Usuário com a senha definida pelo jogador
   const newUser: AppUser = {
     id: userId,
-    email: data.email || invite.email,
+    email: targetEmail,
     password: data.password || '123456',
-    name: data.name,
-    nickname: data.nickname,
+    name: data.name.trim(),
+    nickname: data.nickname.trim(),
     role: assignedRole,
     avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
-    discord: data.discord,
-    inGameId: data.inGameId,
+    discord: data.discord.trim(),
+    inGameId: data.inGameId.trim(),
     isOwner: assignedRole === 'Dono',
     createdAt: new Date().toISOString(),
   };
@@ -739,14 +744,14 @@ export const dbAcceptInviteAndRegisterPlayer = async (
   const newMember: TeamMember = {
     id: memberId,
     userId: userId,
-    name: data.name,
-    nickname: data.nickname,
-    tag: data.tag || `@DU · ${data.nickname.toUpperCase()}`,
+    name: data.name.trim(),
+    nickname: data.nickname.trim(),
+    tag: data.tag || `@DU · ${data.nickname.trim().toUpperCase()}`,
     role: assignedRole,
     avatar: newUser.avatar,
-    discord: data.discord,
-    inGameId: data.inGameId,
-    email: data.email || invite.email,
+    discord: data.discord.trim(),
+    inGameId: data.inGameId.trim(),
+    email: targetEmail,
     gameRole: data.gameRole || 'All-Rounder',
     preferredLane: data.preferredLane || 'Jungle',
     mainPokemon: data.mainPokemon && data.mainPokemon.length > 0 ? data.mainPokemon : ['ceruledge'],
@@ -755,25 +760,25 @@ export const dbAcceptInviteAndRegisterPlayer = async (
     coachNotes: data.coachNotes || 'Entrou via convite oficial.',
   };
 
-  const client = getSupabaseClient();
   if (client && isSupabaseConfigured()) {
     try {
-      // 1. Atualizar status do convite para 'Aceito' (ou registrar caso não estivesse na nuvem)
-      await client
-        .from('team_invites')
-        .upsert({
-          id: invite.id,
-          email: data.email || invite.email,
-          name: data.name || invite.name || null,
-          role: assignedRole,
-          status: 'Aceito',
-          invited_by: invite.invitedBy,
-          invited_by_name: invite.invitedByName,
-          invite_code: cleanCode,
-        });
+      // Verificar se já existe um usuário cadastrado com este e-mail no Supabase
+      if (targetEmail) {
+        const { data: existingUser } = await client
+          .from('users')
+          .select('id')
+          .eq('email', targetEmail)
+          .maybeSingle();
 
-      // 2. Inserir em users (com e-mail e a senha criada)
-      await client.from('users').upsert({
+        if (existingUser?.id) {
+          userId = existingUser.id;
+          newUser.id = userId;
+          newMember.userId = userId;
+        }
+      }
+
+      // 1. Inserir/Atualizar em users
+      const { error: userError } = await client.from('users').upsert({
         id: newUser.id,
         email: newUser.email,
         password: newUser.password,
@@ -786,8 +791,25 @@ export const dbAcceptInviteAndRegisterPlayer = async (
         is_owner: newUser.isOwner,
       });
 
-      // 3. Inserir em team_members
-      await client.from('team_members').upsert({
+      if (userError) {
+        console.error('Erro crítico ao salvar usuário no Supabase:', userError);
+        throw new Error(`Falha ao registrar usuário na nuvem: ${userError.message}`);
+      }
+
+      // Verificar se já existe um membro com este user_id ou e-mail
+      const { data: existingMember } = await client
+        .from('team_members')
+        .select('id')
+        .or(`user_id.eq.${userId},email.eq.${targetEmail}`)
+        .maybeSingle();
+
+      if (existingMember?.id) {
+        memberId = existingMember.id;
+        newMember.id = memberId;
+      }
+
+      // 2. Inserir/Atualizar em team_members
+      const { error: memberError } = await client.from('team_members').upsert({
         id: newMember.id,
         user_id: newMember.userId,
         name: newMember.name,
@@ -805,24 +827,57 @@ export const dbAcceptInviteAndRegisterPlayer = async (
         specialty_or_title: newMember.specialtyOrTitle,
         coach_notes: newMember.coachNotes,
       });
-    } catch (err) {
-      console.warn('Erro ao registrar jogador no Supabase, salvando localmente:', err);
+
+      if (memberError) {
+        console.error('Erro crítico ao salvar membro no Supabase:', memberError);
+        throw new Error(`Falha ao registrar no elenco na nuvem: ${memberError.message}`);
+      }
+
+      // 3. Atualizar status do convite para 'Aceito' no Supabase
+      const { data: existingInvite } = await client
+        .from('team_invites')
+        .select('id')
+        .ilike('invite_code', cleanCode)
+        .maybeSingle();
+
+      const inviteRecordId = existingInvite?.id || invite.id;
+
+      await client
+        .from('team_invites')
+        .upsert({
+          id: inviteRecordId,
+          email: targetEmail,
+          name: data.name || invite.name || null,
+          role: assignedRole,
+          status: 'Aceito',
+          invited_by: invite.invitedBy || 'friba-admin',
+          invited_by_name: invite.invitedByName || 'Comissão Técnica Friba',
+          invite_code: cleanCode,
+        }, { onConflict: 'invite_code' });
+
+    } catch (err: any) {
+      console.error('Erro no fluxo de registro no Supabase:', err);
+      throw err;
     }
   }
 
   // Atualizar cache local
   const currentInvites = await dbFetchInvites();
-  const updatedInvites = currentInvites.map(i => i.id === invite.id ? { ...i, status: 'Aceito' as const } : i);
-  if (!updatedInvites.some(i => i.id === invite.id)) {
+  const updatedInvites = currentInvites.map(i => i.inviteCode === cleanCode ? { ...i, status: 'Aceito' as const } : i);
+  if (!updatedInvites.some(i => i.inviteCode === cleanCode)) {
     updatedInvites.unshift({ ...invite, status: 'Aceito' as const });
   }
   localStorage.setItem(LOCAL_INVITES_KEY, JSON.stringify(updatedInvites));
 
   const currentMembers = await dbFetchMembers();
-  localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify([...currentMembers, newMember]));
+  const updatedMembersList = [
+    ...currentMembers.filter(m => m.id !== newMember.id && m.email !== newMember.email),
+    newMember
+  ];
+  localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify(updatedMembersList));
 
   const currentUsers = await dbFetchUsers();
-  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify([newUser, ...currentUsers.filter(u => u.id !== newUser.id)]));
+  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify([newUser, ...currentUsers.filter(u => u.id !== newUser.id && u.email !== newUser.email)]));
 
   return { member: newMember, user: newUser };
 };

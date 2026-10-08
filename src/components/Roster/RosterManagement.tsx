@@ -11,7 +11,8 @@ import {
   Layers,
   Copy,
   Send,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import type { Role, TeamMember, Lane, PokemonRole, AppUser } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
@@ -25,6 +26,7 @@ interface RosterManagementProps {
   onAddMember: (member: TeamMember) => void;
   onUpdateMember: (member: TeamMember) => void;
   onDeleteMember: (id: string) => void;
+  onRefreshMembers?: () => Promise<void>;
 }
 
 export const RosterManagement: React.FC<RosterManagementProps> = ({
@@ -34,6 +36,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
   onAddMember,
   onUpdateMember,
   onDeleteMember: _onDeleteMember,
+  onRefreshMembers,
 }) => {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -48,6 +51,20 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
   const [generatedInvite, setGeneratedInvite] = useState<{ code: string; link: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleManualSync = async () => {
+    if (!onRefreshMembers || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      await onRefreshMembers();
+      showToast('Elenco sincronizado com o Supabase com sucesso!', 'success');
+    } catch {
+      showToast('Erro ao sincronizar elenco com a nuvem.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const [formData, setFormData] = useState<Partial<TeamMember>>({
     name: '',
@@ -208,6 +225,33 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
               </button>
             )}
           </div>
+
+          {onRefreshMembers && (
+            <button 
+              type="button"
+              className="refresh-roster-btn" 
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              title="Sincronizar elenco com o banco de dados Supabase"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '7px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid rgba(255, 255, 255, 0.14)',
+                color: '#E2E8F0',
+                padding: '10px 16px',
+                borderRadius: '10px',
+                fontSize: '0.86rem',
+                fontWeight: 600,
+                cursor: isSyncing ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <RefreshCw size={14} style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} />
+              <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+            </button>
+          )}
 
           {canEdit && (
             <button 
