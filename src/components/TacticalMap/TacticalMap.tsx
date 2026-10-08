@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from "react";
+import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import {
   MousePointer,
   Pencil,
@@ -51,6 +51,53 @@ type ToolType =
   | "text"
   | "eraser"
   | "pan";
+
+const generateTacticalId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+const drawTacticalArrow = (
+  ctx: CanvasRenderingContext2D,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  color: string,
+  width: number = 4,
+) => {
+  const headLen = Math.max(14, width * 3.5);
+  const angle = Math.atan2(toY - fromY, toX - fromX);
+
+  // Sombra sutil
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.6)";
+  ctx.shadowBlur = 6;
+
+  // Haste da seta
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+
+  ctx.beginPath();
+  ctx.moveTo(fromX, fromY);
+  ctx.lineTo(toX, toY);
+  ctx.stroke();
+
+  // Ponta da seta
+  ctx.beginPath();
+  ctx.moveTo(toX, toY);
+  ctx.lineTo(
+    toX - headLen * Math.cos(angle - Math.PI / 6),
+    toY - headLen * Math.sin(angle - Math.PI / 6),
+  );
+  ctx.lineTo(
+    toX - headLen * Math.cos(angle + Math.PI / 6),
+    toY - headLen * Math.sin(angle + Math.PI / 6),
+  );
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
 
 export const TacticalMap: React.FC<TacticalMapProps> = ({
   presets = [],
@@ -252,9 +299,12 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   }, [pokemons, search, roleFilter]);
 
   // Salvar estado no histórico para Desfazer (Undo)
-  const pushHistory = () => {
-    setHistory((prev) => [...prev.slice(-15), elements]);
-  };
+  const pushHistory = useCallback(() => {
+    setElements((currentElements) => {
+      setHistory((prev) => [...prev.slice(-15), currentElements]);
+      return currentElements;
+    });
+  }, []);
 
   const handleUndo = () => {
     if (history.length > 0) {
@@ -278,7 +328,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
   ) => {
     pushHistory();
     const newElement: TacticalElement = {
-      id: `token-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: generateTacticalId("token"),
       type: "token",
       x,
       y,
@@ -304,7 +354,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
       pokemons[0];
 
     const newElement: TacticalElement = {
-      id: `token-member-${member.id}-${Date.now()}`,
+      id: generateTacticalId(`token-member-${member.id}`),
       type: "token",
       x,
       y,
@@ -422,7 +472,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
 
       pushHistory();
       const newElement: TacticalElement = {
-        id: `token-${Date.now()}`,
+        id: generateTacticalId("token"),
         type: "token",
         x: xPercent,
         y: yPercent,
@@ -438,7 +488,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
         memberRole: member?.gameRole || member?.role
       };
       setElements((prev) => [...prev, newElement]);
-    } catch (_) {}
+    } catch {}
   };
 
   const handleDragOverMap = (e: React.DragEvent) => {
@@ -501,7 +551,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
       window.removeEventListener("mousemove", handleWindowMouseMove);
       window.removeEventListener("mouseup", handleWindowMouseUp);
     };
-  }, [draggedTokenId]);
+  }, [draggedTokenId, pushHistory]);
 
   // Mover Token existente no mapa
   const handleTokenMouseDown = (e: React.MouseEvent, elId: string) => {
@@ -697,50 +747,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     dragStartPoint,
   ]);
 
-  // Função para desenhar seta com ponta perfeita e contorno
-  const drawTacticalArrow = (
-    ctx: CanvasRenderingContext2D,
-    fromX: number,
-    fromY: number,
-    toX: number,
-    toY: number,
-    color: string,
-    width: number = 4,
-  ) => {
-    const headLen = Math.max(14, width * 3.5);
-    const angle = Math.atan2(toY - fromY, toX - fromX);
 
-    // Sombra sutil
-    ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,0.6)";
-    ctx.shadowBlur = 6;
-
-    // Haste da seta
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = width;
-    ctx.lineCap = "round";
-
-    ctx.beginPath();
-    ctx.moveTo(fromX, fromY);
-    ctx.lineTo(toX, toY);
-    ctx.stroke();
-
-    // Ponta da seta
-    ctx.beginPath();
-    ctx.moveTo(toX, toY);
-    ctx.lineTo(
-      toX - headLen * Math.cos(angle - Math.PI / 6),
-      toY - headLen * Math.sin(angle - Math.PI / 6),
-    );
-    ctx.lineTo(
-      toX - headLen * Math.cos(angle + Math.PI / 6),
-      toY - headLen * Math.sin(angle + Math.PI / 6),
-    );
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  };
 
   // Iniciar Pan pelo Viewport
   const handleViewportMouseDown = (e: React.MouseEvent) => {

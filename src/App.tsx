@@ -9,7 +9,8 @@ import { TeamSettings } from './components/Settings/TeamSettings';
 import { AcceptInviteModal } from './components/Invites/AcceptInviteModal';
 import { LoginPage } from './components/Auth/LoginPage';
 import { ProfilePage } from './components/Profile/ProfilePage';
-import { ToastContainer, showToast } from './components/UI/Toast';
+import { ToastContainer } from './components/UI/Toast';
+import { showToast } from './components/UI/toastService';
 import { ShieldCheck } from 'lucide-react';
 import type { 
   Role, 
@@ -113,23 +114,6 @@ export function App() {
     dbFetchAnnouncements().then(data => { if (data && data.length) setAnnouncements(data); });
   }, []);
 
-  // 2. Detectar código de convite via URL (?code=XYZ, ?join=XYZ, ?invite=XYZ ou rotas /join/XYZ, /invite/XYZ)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    let code = params.get('code') || params.get('join') || params.get('invite');
-
-    if (!code) {
-      const pathParts = window.location.pathname.split('/').filter(Boolean);
-      if (pathParts.length >= 2 && ['join', 'invite', 'convite'].includes(pathParts[0].toLowerCase())) {
-        code = pathParts[1];
-      }
-    }
-
-    if (code) {
-      setInviteCodeFromUrl(code.toUpperCase().trim());
-      setIsInviteModalOpen(true);
-    }
-  }, []);
 
   useEffect(() => {
     if (currentUser) {

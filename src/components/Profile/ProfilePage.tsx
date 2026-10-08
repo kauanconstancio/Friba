@@ -21,7 +21,7 @@ import {
 import type { AppUser, TeamMember, PokemonRole, Lane } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
 import { dbCreateOrUpdateUser, dbSaveMember } from '../../services/supabase';
-import { showToast } from '../UI/Toast';
+import { showToast } from '../UI/toastService';
 
 interface ProfilePageProps {
   currentUser: AppUser;

@@ -24,7 +24,7 @@ import {
   dbDeleteUser,
   dbDeleteInvite
 } from '../../services/supabase';
-import { showToast } from '../UI/Toast';
+import { showToast } from '../UI/toastService';
 
 interface TeamSettingsProps {
   currentRole: Role;
@@ -55,7 +55,6 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
 
   // Carregar dados iniciais
   const loadData = async () => {
-    setIsLoading(true);
     try {
       const [fetchedUsers, fetchedInvites] = await Promise.all([
         dbFetchUsers(),
@@ -71,7 +70,22 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
   };
 
   useEffect(() => {
-    loadData();
+    let isMounted = true;
+    Promise.all([dbFetchUsers(), dbFetchInvites()])
+      .then(([fetchedUsers, fetchedInvites]) => {
+        if (!isMounted) return;
+        setUsers(fetchedUsers);
+        setInvites(fetchedInvites);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.error('Erro ao carregar dados:', err);
+        setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Enviar convite
@@ -382,7 +396,10 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
 
           <button 
             type="button" 
-            onClick={loadData} 
+            onClick={() => {
+              setIsLoading(true);
+              loadData();
+            }} 
             disabled={isLoading}
             className="btn-refresh-table"
             title="Recarregar do Banco"

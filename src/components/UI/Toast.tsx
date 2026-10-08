@@ -1,31 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
-
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
-
-export interface ToastItem {
-  id: string;
-  message: string;
-  type: ToastType;
-  duration: number;
-}
-
-type ToastListener = (toast: ToastItem) => void;
-const listeners = new Set<ToastListener>();
-
-export const showToast = (
-  message: string,
-  type: ToastType = 'info',
-  duration: number = 4000
-) => {
-  const toast: ToastItem = {
-    id: `toast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    message,
-    type,
-    duration,
-  };
-  listeners.forEach(fn => fn(toast));
-};
+import { toastListeners } from './toastService';
+import type { ToastItem, ToastListener, ToastType } from './toastService';
+export type { ToastType, ToastItem };
 
 export const ToastContainer: React.FC = () => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -40,9 +17,9 @@ export const ToastContainer: React.FC = () => {
       }
     };
 
-    listeners.add(handleNewToast);
+    toastListeners.add(handleNewToast);
     return () => {
-      listeners.delete(handleNewToast);
+      toastListeners.delete(handleNewToast);
     };
   }, []);
 

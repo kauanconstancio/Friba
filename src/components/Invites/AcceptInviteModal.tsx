@@ -22,7 +22,7 @@ import {
 import type { Role, PokemonRole, Lane, TeamMember, TeamInvite, AppUser } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
 import { dbFindInviteByCode, dbAcceptInviteAndRegisterPlayer } from '../../services/supabase';
-import { showToast } from '../UI/Toast';
+import { showToast } from '../UI/toastService';
 
 interface DropdownOption<T extends string> {
   value: T;
@@ -214,6 +214,7 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
   const [pokemonSearch, setPokemonSearch] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('Todos');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const validatedCodeRef = useRef<string | null>(null);
 
   const handleValidateCode = useCallback(async (codeToTest?: string) => {
     const targetCode = (codeToTest || code).trim().toUpperCase();
@@ -274,13 +275,19 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
     }
   }, [code]);
 
+  const handleValidateRef = useRef(handleValidateCode);
+  useEffect(() => {
+    handleValidateRef.current = handleValidateCode;
+  });
+
   // Validar código automaticamente se fornecido
   useEffect(() => {
-    if (initialCode) {
+    if (initialCode && validatedCodeRef.current !== initialCode) {
+      validatedCodeRef.current = initialCode;
       setCode(initialCode);
-      handleValidateCode(initialCode);
+      handleValidateRef.current(initialCode);
     }
-  }, [initialCode, handleValidateCode]);
+  }, [initialCode]);
 
   const handleRemovePokemon = (pId: string) => {
     setMainPokemon(prev => {

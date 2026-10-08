@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   RotateCcw,
   Search,
@@ -50,7 +50,7 @@ const DRAFT_STEPS: {
 export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
   const [draftMode, setDraftMode] = useState<"Default" | "All-Star">("Default");
   const [pokemons, setPokemons] = useState<PokemonData[]>(POKEMON_ROSTER);
-  const [isLoadingApi, setIsLoadingApi] = useState(false);
+  const [isLoadingApi, setIsLoadingApi] = useState(true);
   const [stepIndex, setStepIndex] = useState(0);
   const [timer, setTimer] = useState(30);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
@@ -60,7 +60,6 @@ export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
 
   useEffect(() => {
     let isMounted = true;
-    setIsLoadingApi(true);
     fetchUniteDbPokemons()
       .then((data) => {
         if (isMounted && data && data.length > 0) {
@@ -107,12 +106,56 @@ export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
   const currentStep = !isFinished ? DRAFT_STEPS[stepIndex] : null;
 
   // Lista de IDs já banidos ou escolhidos
-  const pickedIds = [
+  const pickedIds = useMemo(() => [
     ...blueBans.filter(Boolean),
     ...orangeBans.filter(Boolean),
     ...bluePicks.filter(Boolean),
     ...orangePicks.filter(Boolean),
-  ] as string[];
+  ] as string[], [blueBans, orangeBans, bluePicks, orangePicks]);
+
+  const handleSelectPokemon = useCallback((pokemonId: string) => {
+    if (isFinished || !currentStep || pickedIds.includes(pokemonId)) return;
+
+    if (currentStep.type === "ban") {
+      if (currentStep.team === "blue") {
+        setBlueBans(prev => {
+          const next = [...prev];
+          next[currentStep.slotIndex] = pokemonId;
+          return next;
+        });
+      } else {
+        setOrangeBans(prev => {
+          const next = [...prev];
+          next[currentStep.slotIndex] = pokemonId;
+          return next;
+        });
+      }
+    } else {
+      if (currentStep.team === "blue") {
+        setBluePicks(prev => {
+          const next = [...prev];
+          next[currentStep.slotIndex] = pokemonId;
+          return next;
+        });
+      } else {
+        setOrangePicks(prev => {
+          const next = [...prev];
+          next[currentStep.slotIndex] = pokemonId;
+          return next;
+        });
+      }
+    }
+
+    setStepIndex((prev) => prev + 1);
+    setTimer(30);
+  }, [isFinished, currentStep, pickedIds]);
+
+  const handleAutoPickOnTimeout = useCallback(() => {
+    const available = pokemons.filter((p) => !pickedIds.includes(p.id));
+    if (available.length > 0) {
+      handleSelectPokemon(available[0].id);
+    }
+  }, [pokemons, pickedIds, handleSelectPokemon]);
 
   // Relógio do timer
   useEffect(() => {
@@ -127,7 +170,7 @@ export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isTimerRunning, timer, isFinished, stepIndex]);
+  }, [isTimerRunning, timer, isFinished, handleAutoPickOnTimeout]);
 
   // Turno automático de IA se ativado
   useEffect(() => {
@@ -135,51 +178,13 @@ export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
       const t = setTimeout(() => {
         const available = pokemons.filter((p) => !pickedIds.includes(p.id));
         if (available.length > 0) {
-          handleSelectPokemon(
-            available[Math.floor(Math.random() * Math.min(5, available.length))]
-              .id,
-          );
+          const randomIdx = Math.floor(Math.random() * Math.min(5, available.length));
+          handleSelectPokemon(available[randomIdx].id);
         }
       }, 800);
       return () => clearTimeout(t);
     }
-  }, [stepIndex, vsAi, isFinished, pokemons]);
-
-  const handleAutoPickOnTimeout = () => {
-    const available = pokemons.filter((p) => !pickedIds.includes(p.id));
-    if (available.length > 0) {
-      handleSelectPokemon(available[0].id);
-    }
-  };
-
-  const handleSelectPokemon = (pokemonId: string) => {
-    if (isFinished || !currentStep || pickedIds.includes(pokemonId)) return;
-
-    if (currentStep.type === "ban") {
-      if (currentStep.team === "blue") {
-        const next = [...blueBans];
-        next[currentStep.slotIndex] = pokemonId;
-        setBlueBans(next);
-      } else {
-        const next = [...orangeBans];
-        next[currentStep.slotIndex] = pokemonId;
-        setOrangeBans(next);
-      }
-    } else {
-      if (currentStep.team === "blue") {
-        const next = [...bluePicks];
-        next[currentStep.slotIndex] = pokemonId;
-        setBluePicks(next);
-      } else {
-        const next = [...orangePicks];
-        next[currentStep.slotIndex] = pokemonId;
-        setOrangePicks(next);
-      }
-    }
-
-    setStepIndex((prev) => prev + 1);
-    setTimer(30);
-  };
+  }, [vsAi, currentStep, isFinished, pokemons, pickedIds, handleSelectPokemon]);
 
   const handleNoBan = () => {
     if (!currentStep || currentStep.type !== "ban") return;

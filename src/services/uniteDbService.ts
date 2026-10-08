@@ -68,7 +68,7 @@ export async function fetchUniteDbPokemons(): Promise<PokemonData[]> {
     // Salvar cache no localStorage
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify(pokemons));
-    } catch (_) {}
+    } catch {}
 
     return pokemons;
   } catch (error) {
@@ -79,7 +79,7 @@ export async function fetchUniteDbPokemons(): Promise<PokemonData[]> {
       if (cached) {
         return JSON.parse(cached);
       }
-    } catch (_) {}
+    } catch {}
 
     return POKEMON_ROSTER;
   }
