@@ -5,11 +5,8 @@ import {
   Swords, 
   ClipboardList, 
   Crown, 
-  Edit3, 
-  Trash2, 
   X, 
   Check,
-  GripHorizontal,
   Shield,
   Layers,
   Copy,
@@ -19,7 +16,7 @@ import {
 import type { Role, TeamMember, Lane, PokemonRole, AppUser } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
 import { dbCreateInvite } from '../../services/supabase';
-import { showToast } from '../UI/Toast';
+import { showToast } from '../UI/toastService';
 
 interface RosterManagementProps {
   currentRole: Role;
@@ -36,11 +33,11 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
   members,
   onAddMember,
   onUpdateMember,
-  onDeleteMember
+  onDeleteMember: _onDeleteMember,
 }) => {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+  const [selectedMember, _setSelectedMember] = useState<TeamMember | null>(null);
 
   // Estados do Modal de Convidar Membro
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -135,11 +132,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  const handleOpenEdit = (m: TeamMember) => {
-    setSelectedMember(m);
-    setFormData({ ...m });
-    setIsModalOpen(true);
-  };
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -286,29 +279,6 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                     <h3 className="player-name">{displayName}</h3>
                     <div className="player-tag">@{displayNick}</div>
                   </div>
-
-                  <div className="card-options-area">
-                    {canEdit ? (
-                      <div className="card-hover-actions">
-                        <button 
-                          className="action-icon-btn edit" 
-                          title="Editar" 
-                          onClick={() => handleOpenEdit(member)}
-                        >
-                          <Edit3 size={13} />
-                        </button>
-                        <button 
-                          className="action-icon-btn del" 
-                          title="Remover" 
-                          onClick={() => onDeleteMember(member.id)}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    ) : (
-                      <GripHorizontal size={14} className="drag-icon-muted" />
-                    )}
-                  </div>
                 </div>
 
                 {/* Badges de Função e Rota */}
@@ -410,29 +380,6 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                     <h3 className="player-name">{displayName}</h3>
                     <div className="player-tag">@{displayNick}</div>
                   </div>
-
-                  <div className="card-options-area">
-                    {canEdit ? (
-                      <div className="card-hover-actions">
-                        <button 
-                          className="action-icon-btn edit" 
-                          title="Editar" 
-                          onClick={() => handleOpenEdit(member)}
-                        >
-                          <Edit3 size={13} />
-                        </button>
-                        <button 
-                          className="action-icon-btn del" 
-                          title="Remover" 
-                          onClick={() => onDeleteMember(member.id)}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    ) : (
-                      <GripHorizontal size={14} className="drag-icon-muted" />
-                    )}
-                  </div>
                 </div>
 
                 {/* Badges de Função e Rota */}
@@ -523,27 +470,6 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                     <div className="player-meta">
                       <h3 className="player-name">{displayName}</h3>
                       <div className="player-tag">@{displayNick}</div>
-                    </div>
-
-                    <div className="card-options-area">
-                      {canEdit && (
-                        <div className="card-hover-actions">
-                          <button 
-                            className="action-icon-btn edit" 
-                            title="Editar" 
-                            onClick={() => handleOpenEdit(member)}
-                          >
-                            <Edit3 size={13} />
-                          </button>
-                          <button 
-                            className="action-icon-btn del" 
-                            title="Remover" 
-                            onClick={() => onDeleteMember(member.id)}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
 
