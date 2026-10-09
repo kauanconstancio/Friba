@@ -1066,14 +1066,6 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
               )}
 
               <div className="footer-right-actions">
-                <button 
-                  type="button"
-                  className="btn-secondary" 
-                  onClick={() => handleOpenMatchStats(selectedEvent, canManage)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#38bdf8' }}
-                >
-                  <BarChart2 size={14} /> Relatório & Estatísticas
-                </button>
                 {canManage && selectedEvent.status !== 'Concluído' && (
                   <button 
                     className="btn-primary" 
