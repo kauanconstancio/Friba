@@ -9,15 +9,12 @@ import {
   Hand,
   RotateCcw,
   Trash2,
-  Download,
   ZoomIn,
   ZoomOut,
   Maximize2,
   Search,
   X,
   Move,
-  Bookmark,
-  Check,
   Users,
   Shield,
   Sparkles,
@@ -100,8 +97,8 @@ const drawTacticalArrow = (
 };
 
 export const TacticalMap: React.FC<TacticalMapProps> = ({
-  presets = [],
-  onSaveStrategy,
+  presets: _presets = [],
+  onSaveStrategy: _onSaveStrategy,
   members = [],
 }) => {
   const [deckTab, setDeckTab] = useState<"members" | "pokemons">("members");
@@ -167,9 +164,6 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     text: "",
   });
 
-  // Salvar Tática
-  const [stratTitle, setStratTitle] = useState("");
-  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
   // Resetar zoom e centralizar o mapa
   const handleResetZoom = () => {
@@ -1008,145 +1002,7 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
     setTextModal({ open: false, x: 0, y: 0, text: "" });
   };
 
-  // Exportar prancheta montada como PNG em alta resolução
-  const handleExportBoard = () => {
-    const mapImg = new Image();
-    mapImg.crossOrigin = "anonymous";
-    mapImg.src = THEIA_MAP.image;
 
-    mapImg.onload = () => {
-      const exportCanvas = document.createElement("canvas");
-      exportCanvas.width = 1920;
-      exportCanvas.height = 1080;
-      const ctx = exportCanvas.getContext("2d");
-      if (!ctx) return;
-
-      // Desenhar mapa de fundo com alta fidelidade
-      ctx.drawImage(mapImg, 0, 0, 1920, 1080);
-
-      // Camada de elementos vetoriais (desenhos, setas, linhas)
-      elements.forEach((el) => {
-        const elColor = el.color || "#0B5FFF";
-        if (el.type === "draw" && el.points && el.points.length > 1) {
-          ctx.strokeStyle = elColor;
-          ctx.lineWidth = 8;
-          ctx.lineCap = "round";
-          ctx.beginPath();
-          ctx.moveTo(
-            (el.points[0].x / 100) * 1920,
-            (el.points[0].y / 100) * 1080,
-          );
-          for (let i = 1; i < el.points.length; i++) {
-            ctx.lineTo(
-              (el.points[i].x / 100) * 1920,
-              (el.points[i].y / 100) * 1080,
-            );
-          }
-          ctx.stroke();
-        } else if (
-          el.type === "arrow" &&
-          el.toX !== undefined &&
-          el.toY !== undefined
-        ) {
-          drawTacticalArrow(
-            ctx,
-            (el.x / 100) * 1920,
-            (el.y / 100) * 1080,
-            (el.toX / 100) * 1920,
-            (el.toY / 100) * 1080,
-            elColor,
-          );
-        } else if (
-          el.type === "line" &&
-          el.toX !== undefined &&
-          el.toY !== undefined
-        ) {
-          ctx.strokeStyle = elColor;
-          ctx.lineWidth = 7;
-          ctx.lineCap = "round";
-          ctx.beginPath();
-          ctx.moveTo((el.x / 100) * 1920, (el.y / 100) * 1080);
-          ctx.lineTo((el.toX / 100) * 1920, (el.toY / 100) * 1080);
-          ctx.stroke();
-        } else if (el.type === "text" && el.label) {
-          ctx.font = "bold 24px Outfit, sans-serif";
-          ctx.fillStyle = elColor;
-          ctx.shadowColor = "rgba(0,0,0,0.85)";
-          ctx.shadowBlur = 8;
-          ctx.fillText(el.label, (el.x / 100) * 1920, (el.y / 100) * 1080);
-        }
-      });
-
-      // Renderizar tokens de Pokémon posicionados no mapa
-      const tokenElements = elements.filter((el) => el.type === "token");
-      const tokenPromises = tokenElements.map((el) => {
-        return new Promise<void>((resolve) => {
-          if (!el.pokemonSprite) return resolve();
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          img.onload = () => {
-            const cx = (el.x / 100) * 1920;
-            const cy = (el.y / 100) * 1080;
-            const radius = 22;
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(cx, cy, radius + 3, 0, Math.PI * 2);
-            ctx.fillStyle = el.team === "blue" ? "#0B5FFF" : "#F97316";
-            ctx.shadowColor =
-              el.team === "blue"
-                ? "rgba(11, 95, 255, 0.8)"
-                : "rgba(249, 115, 22, 0.8)";
-            ctx.shadowBlur = 10;
-            ctx.fill();
-
-            ctx.beginPath();
-            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-            ctx.clip();
-            ctx.fillStyle = "#0f172a";
-            ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
-            ctx.drawImage(
-              img,
-              cx - radius,
-              cy - radius,
-              radius * 2,
-              radius * 2,
-            );
-            ctx.restore();
-
-            resolve();
-          };
-          img.onerror = () => resolve();
-          img.src = el.pokemonSprite;
-        });
-      });
-
-      Promise.all(tokenPromises).then(() => {
-        const link = document.createElement("a");
-        link.download = `prancheta-friba-theia-${Date.now()}.png`;
-        link.href = exportCanvas.toDataURL("image/png");
-        link.click();
-      });
-    };
-  };
-
-  // Salvar estratégia personalizada
-  const handleSaveCurrentStrategy = () => {
-    const title =
-      stratTitle.trim() || `Tática: ${THEIA_MAP.name} #${presets.length + 1}`;
-    if (onSaveStrategy) {
-      onSaveStrategy({
-        id: `strat-${Date.now()}`,
-        title,
-        phaseTime: "Geral",
-        description: `Estratégia salva no mapa ${THEIA_MAP.name}`,
-        elements: [...elements],
-      });
-      setShowSaveSuccess(true);
-      setTimeout(() => setShowSaveSuccess(false), 3000);
-      setStratTitle("");
-    }
-  };
 
   return (
     <div className="tactical-board-page">
@@ -1182,24 +1038,6 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
             <Trash2 size={13} /> LIMPAR
           </button>
 
-          {onSaveStrategy && (
-            <button
-              className="action-btn-pill save"
-              onClick={handleSaveCurrentStrategy}
-              title="Salvar prancheta tática"
-            >
-              {showSaveSuccess ? <Check size={13} /> : <Bookmark size={13} />}
-              {showSaveSuccess ? "SALVO!" : "SALVAR"}
-            </button>
-          )}
-
-          <button
-            className="action-btn-pill export"
-            onClick={handleExportBoard}
-            title="Exportar imagem PNG da prancheta"
-          >
-            <Download size={13} /> EXPORTAR PNG
-          </button>
         </div>
       </div>
 
