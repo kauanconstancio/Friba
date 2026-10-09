@@ -92,10 +92,36 @@ CREATE TABLE IF NOT EXISTS public.scrim_events (
   category TEXT DEFAULT 'Treino' CHECK (category IN ('Amistoso', 'Treino', 'Review', 'Campeonato')),
   lineup TEXT[] DEFAULT '{}',
   score JSONB DEFAULT '{"us": 0, "them": 0}'::jsonb,
+  games JSONB DEFAULT '[]'::jsonb,
+  attendance JSONB DEFAULT '[]'::jsonb,
+  opponent_team_id TEXT,
+  opponent_players TEXT[] DEFAULT '{}',
   vod_url TEXT,
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Garantir colunas adicionais para scrim_events se já existir
+ALTER TABLE public.scrim_events ADD COLUMN IF NOT EXISTS games JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.scrim_events ADD COLUMN IF NOT EXISTS attendance JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.scrim_events ADD COLUMN IF NOT EXISTS opponent_team_id TEXT;
+ALTER TABLE public.scrim_events ADD COLUMN IF NOT EXISTS opponent_players TEXT[] DEFAULT '{}';
+
+-- ==========================================================
+-- 5.1 TABELA DE EQUIPES OPONENTES / ADVERSÁRIAS (Rivais)
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS public.opponent_teams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  contact TEXT,
+  players TEXT[] DEFAULT '{}',
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.opponent_teams ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permissao Opponent Teams" ON public.opponent_teams;
+CREATE POLICY "Permissao Opponent Teams" ON public.opponent_teams FOR ALL USING (true);
 
 -- ==========================================================
 -- 6. TABELA DE PLANOS TÁTICOS (Prancheta Tática / Planner)

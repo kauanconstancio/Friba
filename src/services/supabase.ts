@@ -8,13 +8,13 @@ import type {
   StrategyPlan, 
   TeamAnnouncement,
   PokemonRole,
-  Lane
+  Lane,
+  OpponentTeam
 } from '../types';
 import { 
   INITIAL_MEMBERS, 
-  INITIAL_SCRIMS, 
   INITIAL_PRESETS, 
-  INITIAL_ANNOUNCEMENTS 
+  INITIAL_ANNOUNCEMENTS
 } from '../data/initialData';
 
 // Credenciais oficiais da Friba (Supabase Cloud)
@@ -140,6 +140,7 @@ const LOCAL_MEMBERS_KEY = 'friba_team_members_v4';
 const LOCAL_SCRIMS_KEY = 'friba_team_scrims_v4';
 const LOCAL_PRESETS_KEY = 'friba_team_presets_v4';
 const LOCAL_ANNOUNCEMENTS_KEY = 'friba_team_announcements_v4';
+const LOCAL_OPPONENT_TEAMS_KEY = 'friba_opponent_teams_v2';
 export const AUTH_SESSION_KEY = 'friba_auth_user_session';
 
 /* ==========================================================
@@ -882,8 +883,8 @@ export const dbAcceptInviteAndRegisterPlayer = async (
   return { member: newMember, user: newUser };
 };
 
-/* ==========================================================
-   5. OPERAÇÕES DE SCRIMS & AGENDA
+/* ===========================================/* ==========================================================
+   5. OPERAÇÕES DE SCRIMS E TREINOS (AGENDA)
    ========================================================== */
 export const dbFetchScrims = async (): Promise<ScrimEvent[]> => {
   const client = getSupabaseClient();
@@ -894,24 +895,42 @@ export const dbFetchScrims = async (): Promise<ScrimEvent[]> => {
         .select('*')
         .order('date', { ascending: true });
 
-      if (!error && data && data.length > 0) {
-        return data.map((item: any) => ({
-          id: item.id,
-          opponentTeam: item.opponent_team,
-          opponentTag: item.opponent_tag,
-          title: item.title,
-          opponentContact: item.opponent_contact,
-          date: item.date,
-          time: item.time,
-          endTime: item.end_time,
-          format: item.format,
-          status: item.status,
-          category: item.category,
-          lineup: item.lineup || [],
-          score: item.score || { us: 0, them: 0 },
-          vodUrl: item.vod_url,
-          notes: item.notes,
-        }));
+      if (!error && data) {
+        const mapped: ScrimEvent[] = data.map((item: any) => {
+          const rawScore = item.score || {};
+          const games = item.games || rawScore.games || [];
+          const attendance = item.attendance || rawScore.attendance || [];
+          const opponentTeamId = item.opponent_team_id || rawScore.opponentTeamId || item.opponentTeamId || undefined;
+          const opponentPlayers = item.opponent_players || rawScore.opponentPlayers || item.opponentPlayers || [];
+
+          return {
+            id: item.id,
+            opponentTeam: item.opponent_team,
+            opponentTag: item.opponent_tag,
+            title: item.title,
+            opponentContact: item.opponent_contact,
+            date: item.date,
+            time: item.time,
+            endTime: item.end_time,
+            format: item.format,
+            status: item.status,
+            category: item.category,
+            lineup: item.lineup || [],
+            score: {
+              us: rawScore.us ?? 0,
+              them: rawScore.them ?? 0,
+            },
+            vodUrl: item.vod_url,
+            notes: item.notes,
+            attendance,
+            games,
+            opponentTeamId,
+            opponentPlayers,
+          };
+        });
+
+        localStorage.setItem(LOCAL_SCRIMS_KEY, JSON.stringify(mapped));
+        return mapped;
       }
     } catch (err) {
       console.warn('Erro ao buscar scrims no Supabase:', err);
@@ -919,14 +938,24 @@ export const dbFetchScrims = async (): Promise<ScrimEvent[]> => {
   }
 
   const local = localStorage.getItem(LOCAL_SCRIMS_KEY);
-  return local ? JSON.parse(local) : INITIAL_SCRIMS;
+  return local ? JSON.parse(local) : [];
 };
 
 export const dbSaveScrim = async (scrim: ScrimEvent): Promise<ScrimEvent> => {
   const client = getSupabaseClient();
   if (client && isSupabaseConfigured()) {
     try {
-      const payload = {
+      // Objeto rico embutido no score JSONB para garantir persistência de games e stats na nuvem
+      const richScore = {
+        us: scrim.score?.us ?? 0,
+        them: scrim.score?.them ?? 0,
+        games: scrim.games || [],
+        attendance: scrim.attendance || [],
+        opponentTeamId: scrim.opponentTeamId || null,
+        opponentPlayers: scrim.opponentPlayers || []
+      };
+
+      const payload: Record<string, any> = {
         id: scrim.id,
         opponent_team: scrim.opponentTeam,
         opponent_tag: scrim.opponentTag,
@@ -939,12 +968,15 @@ export const dbSaveScrim = async (scrim: ScrimEvent): Promise<ScrimEvent> => {
         status: scrim.status,
         category: scrim.category || 'Treino',
         lineup: scrim.lineup || [],
-        score: scrim.score || { us: 0, them: 0 },
+        score: richScore,
         vod_url: scrim.vodUrl || null,
         notes: scrim.notes || null,
       };
 
-      await client.from('scrim_events').upsert(payload);
+      const { error: upsertErr } = await client.from('scrim_events').upsert(payload);
+      if (upsertErr) {
+        console.warn('Erro ao salvar scrim no Supabase:', upsertErr);
+      }
     } catch (err) {
       console.warn('Erro ao salvar scrim no Supabase:', err);
     }
@@ -1082,3 +1114,123 @@ export const dbSaveAnnouncement = async (announcement: TeamAnnouncement): Promis
   localStorage.setItem(LOCAL_ANNOUNCEMENTS_KEY, JSON.stringify(updated));
   return announcement;
 };
+
+/* ==========================================================
+   8. OPERAÇÕES DE EQUIPES OPONENTES / ADVERSÁRIAS (BANCO DE DADOS)
+   ========================================================== */
+const SHARED_OPPONENTS_PLAN_ID = 'shared-opponent-teams';
+
+export const dbFetchOpponentTeams = async (): Promise<OpponentTeam[]> => {
+  const client = getSupabaseClient();
+  if (client && isSupabaseConfigured()) {
+    try {
+      // 1. Tentar tabela nativa opponent_teams
+      const { data, error } = await client
+        .from('opponent_teams')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (!error && data) {
+        const teams: OpponentTeam[] = data.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          tag: item.tag,
+          contact: item.contact,
+          players: item.players || [],
+          notes: item.notes,
+          createdAt: item.created_at,
+        }));
+        localStorage.setItem(LOCAL_OPPONENT_TEAMS_KEY, JSON.stringify(teams));
+        return teams;
+      }
+
+      // 2. Fallback remoto no próprio Supabase (registro compartilhado em strategy_plans)
+      const { data: sharedPlan } = await client
+        .from('strategy_plans')
+        .select('elements')
+        .eq('id', SHARED_OPPONENTS_PLAN_ID)
+        .maybeSingle();
+
+      if (sharedPlan && Array.isArray(sharedPlan.elements)) {
+        const teams = sharedPlan.elements as OpponentTeam[];
+        localStorage.setItem(LOCAL_OPPONENT_TEAMS_KEY, JSON.stringify(teams));
+        return teams;
+      }
+    } catch (err) {
+      console.warn('Erro ao buscar equipes oponentes no Supabase:', err);
+    }
+  }
+
+  const local = localStorage.getItem(LOCAL_OPPONENT_TEAMS_KEY);
+  if (!local) return [];
+  try {
+    return JSON.parse(local);
+  } catch {
+    return [];
+  }
+};
+
+export const dbSaveOpponentTeam = async (team: OpponentTeam): Promise<OpponentTeam> => {
+  const teams = await dbFetchOpponentTeams();
+  const exists = teams.some(t => t.id === team.id);
+  const updated = exists ? teams.map(t => t.id === team.id ? team : t) : [team, ...teams];
+  localStorage.setItem(LOCAL_OPPONENT_TEAMS_KEY, JSON.stringify(updated));
+
+  const client = getSupabaseClient();
+  if (client && isSupabaseConfigured()) {
+    try {
+      // Tentar tabela nativa
+      await client.from('opponent_teams').upsert({
+        id: team.id,
+        name: team.name,
+        tag: team.tag,
+        contact: team.contact || null,
+        players: team.players || [],
+        notes: team.notes || null,
+      });
+    } catch {
+      // Ignora se tabela nativa ainda não existe
+    }
+
+    try {
+      // Garantir sincronização remota compartilhada no Supabase
+      await client.from('strategy_plans').upsert({
+        id: SHARED_OPPONENTS_PLAN_ID,
+        title: 'Equipes Adversárias Cadastradas',
+        description: 'Registro compartilhado de oponentes da organização',
+        elements: updated,
+      });
+    } catch (err) {
+      console.warn('Erro ao sincronizar equipes oponentes no Supabase:', err);
+    }
+  }
+
+  return team;
+};
+
+export const dbDeleteOpponentTeam = async (id: string): Promise<void> => {
+  const teams = await dbFetchOpponentTeams();
+  const updated = teams.filter(t => t.id !== id);
+  localStorage.setItem(LOCAL_OPPONENT_TEAMS_KEY, JSON.stringify(updated));
+
+  const client = getSupabaseClient();
+  if (client && isSupabaseConfigured()) {
+    try {
+      await client.from('opponent_teams').delete().eq('id', id);
+    } catch {
+      // Ignora se tabela não existe
+    }
+
+    try {
+      await client.from('strategy_plans').upsert({
+        id: SHARED_OPPONENTS_PLAN_ID,
+        title: 'Equipes Adversárias Cadastradas',
+        description: 'Registro compartilhado de oponentes da organização',
+        elements: updated,
+      });
+    } catch (err) {
+      console.warn('Erro ao atualizar equipes oponentes no Supabase:', err);
+    }
+  }
+};
+

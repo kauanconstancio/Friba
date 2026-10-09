@@ -130,11 +130,38 @@ export interface ScrimAttendance {
   note?: string;
   updatedAt?: string;
 }
+export interface OpponentTeam {
+  id: string;
+  name: string;
+  tag: string;
+  logo?: string;
+  contact?: string;
+  players: string[];
+  notes?: string;
+  createdAt?: string;
+}
+
+export interface GamePlayerStats {
+  playerName: string;
+  playerTag?: string;
+  pokemonId: string;
+  pokemonName?: string;
+  pokemonSprite?: string;
+  kos: number;
+  assists: number;
+  damage: string | number;
+  damageTaken: string | number;
+  healing: string | number;
+  points: number;
+  isMvp?: boolean;
+}
 
 export interface ScrimGameDetail {
   gameNumber: number;
   scoreUs: number;
   scoreThem: number;
+  usPlayersStats?: GamePlayerStats[];
+  themPlayersStats?: GamePlayerStats[];
   mvpMemberName?: string;
   notes?: string;
 }
@@ -143,12 +170,14 @@ export interface ScrimEvent {
   id: string;
   opponentTeam: string;
   opponentTag: string;
+  opponentTeamId?: string;
+  opponentPlayers?: string[];
   title?: string;
   opponentContact?: string;
   date: string;
   time: string;
   endTime?: string;
-  format: 'MD1' | 'MD3' | 'MD5';
+  format: 'MD1' | 'MD3' | 'MD5' | 'MD7';
   status: 'Agendado' | 'Confirmado' | 'Concluído';
   category?: 'Amistoso' | 'Treino' | 'Review' | 'Campeonato';
   lineup: string[];

@@ -1,4 +1,4 @@
-import type { TeamMember, ScrimEvent, StrategyPlan, TeamAnnouncement } from '../types';
+import type { TeamMember, ScrimEvent, StrategyPlan, TeamAnnouncement, OpponentTeam } from '../types';
 
 // Roster limpo: apenas o Dono inicial da organização (jogadores entram via convite)
 export const INITIAL_MEMBERS: TeamMember[] = [
@@ -18,6 +18,9 @@ export const INITIAL_MEMBERS: TeamMember[] = [
 
 // Sem dados mockados: treinos são adicionados pelo Dono/Manager
 export const INITIAL_SCRIMS: ScrimEvent[] = [];
+
+// Sem dados mockados: equipes adversárias são cadastradas pelo usuário
+export const INITIAL_OPPONENT_TEAMS: OpponentTeam[] = [];
 
 // Sem dados mockados: avisos são adicionados pela Staff
 export const INITIAL_ANNOUNCEMENTS: TeamAnnouncement[] = [];
