@@ -6,13 +6,12 @@ import {
   EyeOff,
   ArrowRight,
   ShieldCheck,
-  Crown,
   AlertCircle,
   Ticket,
   Sparkles,
 } from "lucide-react";
 import type { AppUser } from "../../types";
-import { authLogin, DEFAULT_OWNER_USER } from "../../services/supabase";
+import { authLogin } from "../../services/supabase";
 
 interface LoginPageProps {
   onLoginSuccess: (user: AppUser) => void;
@@ -60,12 +59,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleQuickFillOwner = () => {
-    setEmail(DEFAULT_OWNER_USER.email);
-    setPassword(DEFAULT_OWNER_USER.password || "Kmc@130606");
-    setErrorMessage(null);
   };
 
   const handleInviteSubmit = (e: React.FormEvent) => {
@@ -197,28 +190,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               )}
             </button>
 
-            {/* Cartão de Acesso Rápido do Dono */}
-            <div className="login-quick-card">
-              <div className="login-quick-header">
-                <div className="login-quick-badge">
-                  <Crown size={12} color="#F59E0B" />
-                  <span>Conta do Dono Registrada</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleQuickFillOwner}
-                  className="login-quick-fill-btn"
-                >
-                  Preencher dados
-                </button>
-              </div>
-              <div className="login-quick-details">
-                <span className="login-quick-user">
-                  {DEFAULT_OWNER_USER.email}
-                </span>
-                <span className="login-quick-role">Cargo: Dono da Equipe</span>
-              </div>
-            </div>
           </form>
         )}
 
