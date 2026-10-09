@@ -801,20 +801,31 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
         }
 
         .form-input {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          border-radius: 8px;
+          height: 42px;
+          background: rgba(10, 16, 32, 0.75);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 10px;
           padding: 10px 14px;
           color: #FFFFFF;
           font-size: 0.88rem;
+          font-family: var(--font-body);
           outline: none;
-          transition: all 0.2s ease;
+          box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+          transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .form-input:hover {
+          border-color: rgba(255, 255, 255, 0.26);
+          background: rgba(14, 22, 44, 0.85);
         }
 
         .form-input:focus {
           border-color: var(--friba-blue);
-          background: rgba(255, 255, 255, 0.08);
-          box-shadow: 0 0 12px rgba(11, 95, 255, 0.3);
+          background: rgba(12, 22, 44, 0.95);
+          box-shadow: 0 0 0 3px rgba(11, 95, 255, 0.22), 0 4px 16px rgba(11, 95, 255, 0.15);
         }
 
         .code-font {

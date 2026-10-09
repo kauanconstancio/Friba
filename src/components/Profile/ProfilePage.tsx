@@ -1368,19 +1368,32 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         }
 
         .profile-text-input {
-          background: #0B111E;
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          height: 42px;
+          color-scheme: dark;
+          background: rgba(10, 16, 32, 0.75);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.14);
           color: #F8FAFC;
-          font-size: 0.85rem;
+          font-size: 0.88rem;
+          font-family: var(--font-body);
           padding: 10px 14px;
           border-radius: 10px;
           outline: none;
-          transition: all 0.2s;
+          box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+          transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .profile-text-input:hover {
+          border-color: rgba(255, 255, 255, 0.26);
+          background: rgba(14, 22, 44, 0.85);
         }
 
         .profile-text-input:focus {
-          border-color: #38BDF8;
-          box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+          border-color: #0B5FFF;
+          background: rgba(12, 22, 44, 0.95);
+          box-shadow: 0 0 0 3px rgba(11, 95, 255, 0.22), 0 4px 16px rgba(11, 95, 255, 0.15);
         }
 
         .profile-text-input.is-disabled {

@@ -1013,6 +1013,7 @@ export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
           outline: none;
           appearance: none;
           cursor: pointer;
+          color-scheme: dark;
           box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
           transition: border-color 0.2s;
         }
