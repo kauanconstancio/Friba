@@ -345,8 +345,8 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
         ) : (
           <div className="roster-cards-grid">
             {starters.map((member) => {
-              const displayName = member.name || member.nickname;
-              const displayNick = member.nickname || member.name;
+              const displayName = member.nickname || member.name;
+              const displaySub = member.name && member.nickname && member.name !== member.nickname ? member.name : `@${member.nickname || member.name}`;
               const initial = displayName ? displayName.charAt(0).toUpperCase() : 'F';
               const mainPokeId = member.mainPokemon?.[0];
               const mainPoke = getPokemonInfo(mainPokeId);
@@ -372,7 +372,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                   )}
                   <div className="player-meta">
                     <h3 className="player-name">{displayName}</h3>
-                    <div className="player-tag">@{displayNick}</div>
+                    <div className="player-tag">{displaySub}</div>
                   </div>
                 </div>
 
@@ -446,8 +446,8 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
         ) : (
           <div className="roster-cards-grid">
             {reserves.map((member) => {
-              const displayName = member.name || member.nickname;
-              const displayNick = member.nickname || member.name;
+              const displayName = member.nickname || member.name;
+              const displaySub = member.name && member.nickname && member.name !== member.nickname ? member.name : `@${member.nickname || member.name}`;
               const initial = displayName ? displayName.charAt(0).toUpperCase() : 'M';
               const mainPokeId = member.mainPokemon?.[0];
               const mainPoke = getPokemonInfo(mainPokeId);
@@ -473,7 +473,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                   )}
                   <div className="player-meta">
                     <h3 className="player-name">{displayName}</h3>
-                    <div className="player-tag">@{displayNick}</div>
+                    <div className="player-tag">{displaySub}</div>
                   </div>
                 </div>
 
@@ -1506,7 +1506,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
         .custom-roster-form input,
         .custom-roster-form select {
           width: 100%;
-          background: #0B111E;
+          background-color: #0B111E;
           border: 1px solid rgba(255, 255, 255, 0.1);
           color: #F8FAFC;
           padding: 9px 12px;
@@ -1514,6 +1514,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           font-size: 0.85rem;
           outline: none;
           transition: all 0.2s ease;
+          color-scheme: dark;
         }
 
         .custom-roster-form input:focus,

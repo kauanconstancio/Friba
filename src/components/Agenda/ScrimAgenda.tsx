@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
@@ -22,9 +23,14 @@ import {
   Play,
   Edit3,
   UserCheck,
-  ShieldAlert
+  ShieldAlert,
+  Shield,
+  BarChart2
 } from 'lucide-react';
-import type { ScrimEvent, Role, TeamMember, AppUser, ScrimAttendance, ScrimGameDetail } from '../../types';
+import type { ScrimEvent, Role, TeamMember, AppUser, ScrimAttendance, OpponentTeam } from '../../types';
+import { OpponentsModal } from './OpponentsModal';
+import { MatchStatsModal } from './MatchStatsModal';
+import { dbFetchOpponentTeams, dbSaveOpponentTeam, dbDeleteOpponentTeam } from '../../services/supabase';
 
 interface ScrimAgendaProps {
   currentRole: Role;
@@ -54,7 +60,26 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   // Modais
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<ScrimEvent | null>(null);
-  const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
+
+  // Equipes Oponentes & Estatísticas Detalhadas da Partida
+  const [opponentTeams, setOpponentTeams] = useState<OpponentTeam[]>([]);
+  const [isOpponentsModalOpen, setIsOpponentsModalOpen] = useState(false);
+  const [isMatchStatsModalOpen, setIsMatchStatsModalOpen] = useState(false);
+  const [statsModalScrim, setStatsModalScrim] = useState<ScrimEvent | null>(null);
+  const [statsModalCanEdit, setStatsModalCanEdit] = useState(true);
+
+  // Carregar equipes oponentes do banco / localStorage
+  useEffect(() => {
+    let isMounted = true;
+    dbFetchOpponentTeams().then(teams => {
+      if (isMounted) {
+        setOpponentTeams(teams);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Estados para prompt de presença (atraso / ausência)
   const [attendancePromptType, setAttendancePromptType] = useState<'Atraso' | 'Ausente' | null>(null);
@@ -78,25 +103,6 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
 
   // Custom player input para o formulário de escalação
   const [customPlayerName, setCustomPlayerName] = useState('');
-
-  // Form State Resultado / Pós-Treino
-  const [vodUrl, setVodUrl] = useState('');
-  const [resultNotes, setResultNotes] = useState('');
-  const [selectedMvp, setSelectedMvp] = useState('');
-  const [gameDetails, setGameDetails] = useState<ScrimGameDetail[]>([]);
-
-  // Placar da série calculado automaticamente das vitórias/derrotas de partida a partida
-  const computedScoreUs = gameDetails.filter(g => {
-    const us = Number(g.scoreUs) || 0;
-    const them = Number(g.scoreThem) || 0;
-    return us > them && (us > 0 || them > 0);
-  }).length;
-
-  const computedScoreThem = gameDetails.filter(g => {
-    const us = Number(g.scoreUs) || 0;
-    const them = Number(g.scoreThem) || 0;
-    return them > us && (us > 0 || them > 0);
-  }).length;
 
   const canManage = currentRole === 'Dono' || currentRole === 'Manager' || currentRole === 'Coach';
 
@@ -213,20 +219,34 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   // Jogadores disponíveis no elenco
   const starters = members.filter(m => m.role === 'Jogador' && m.status === 'Titular');
 
+  // Helper para obter o Nick In-Game do jogador
+  const getPlayerNick = (rawName?: string): string => {
+    if (!rawName) return '';
+    const clean = rawName.trim().toLowerCase();
+    const found = members.find(m => 
+      (m.name && m.name.trim().toLowerCase() === clean) || 
+      (m.nickname && m.nickname.trim().toLowerCase() === clean) ||
+      (m.inGameId && m.inGameId.trim().toLowerCase() === clean)
+    );
+    return found?.nickname || rawName;
+  };
+
   // Abertura do Modal de Novo Evento para uma data específica
   const handleOpenSlot = (dateStr: string, hourStr: string) => {
     if (!canManage) return;
     const endH = parseInt(hourStr.split(':')[0], 10) + 1;
     const endTime = `${String(endH).padStart(2, '0')}:30`;
 
-    // Escalação padrão: seleciona automaticamente os 5 titulares se existirem
+    // Escalação padrão: seleciona automaticamente os 5 titulares pelo Nick In-Game
     const defaultLineup = starters.length > 0 
-      ? starters.map(s => s.name) 
-      : members.slice(0, 5).map(m => m.name);
+      ? starters.map(s => s.nickname || s.name) 
+      : members.slice(0, 5).map(m => m.nickname || m.name);
 
     setFormData({
       opponentTeam: '',
       opponentTag: '',
+      opponentTeamId: undefined,
+      opponentPlayers: undefined,
       title: '',
       opponentContact: '',
       date: dateStr,
@@ -245,10 +265,24 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   // Alternar jogador na escalação do formulário
   const handleTogglePlayerInLineup = (playerName: string) => {
     const currentLineup = formData.lineup || [];
-    if (currentLineup.includes(playerName)) {
+    const cleanTarget = playerName.trim().toLowerCase();
+
+    const isAlreadyIn = currentLineup.some(p => {
+      const pClean = p.trim().toLowerCase();
+      if (pClean === cleanTarget) return true;
+      const m = members.find(mem => mem.name.toLowerCase() === pClean || mem.nickname.toLowerCase() === pClean);
+      return m && (m.name.toLowerCase() === cleanTarget || m.nickname.toLowerCase() === cleanTarget);
+    });
+
+    if (isAlreadyIn) {
       setFormData({
         ...formData,
-        lineup: currentLineup.filter(p => p !== playerName)
+        lineup: currentLineup.filter(p => {
+          const pClean = p.trim().toLowerCase();
+          if (pClean === cleanTarget) return false;
+          const m = members.find(mem => mem.name.toLowerCase() === pClean || mem.nickname.toLowerCase() === pClean);
+          return !(m && (m.name.toLowerCase() === cleanTarget || m.nickname.toLowerCase() === cleanTarget));
+        })
       });
     } else {
       setFormData({
@@ -259,7 +293,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   };
 
   const handleSelectAllStarters = () => {
-    const starterNames = starters.map(s => s.name);
+    const starterNames = starters.map(s => s.nickname || s.name);
     if (starterNames.length > 0) {
       setFormData({ ...formData, lineup: starterNames });
     }
@@ -279,6 +313,39 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
     setCustomPlayerName('');
   };
 
+  // Ações de Gerenciamento de Rivais / Oponentes
+  const handleSaveOpponentTeam = async (team: OpponentTeam) => {
+    const saved = await dbSaveOpponentTeam(team);
+    setOpponentTeams(prev => {
+      const idx = prev.findIndex(t => t.id === saved.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = saved;
+        return copy;
+      }
+      return [saved, ...prev];
+    });
+  };
+
+  const handleDeleteOpponentTeam = async (id: string) => {
+    await dbDeleteOpponentTeam(id);
+    setOpponentTeams(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Abrir tela de estatísticas da partida estilo Print (MatchStatsModal)
+  const handleOpenMatchStats = (scrim: ScrimEvent, canEditMode: boolean = false) => {
+    setStatsModalScrim(scrim);
+    setStatsModalCanEdit(canEditMode);
+    setIsMatchStatsModalOpen(true);
+  };
+
+  const handleSaveMatchStats = (updatedScrim: ScrimEvent) => {
+    onUpdateScrim(updatedScrim);
+    if (selectedEvent && selectedEvent.id === updatedScrim.id) {
+      setSelectedEvent(updatedScrim);
+    }
+  };
+
   // Salvar novo evento
   const handleSaveAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,10 +354,11 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
     // Lista inicial de presença com status 'Pendente' para os atletas escalados
     const initialAttendance: ScrimAttendance[] = (formData.lineup || []).map(playerName => {
       const matchedMember = members.find(m => m.name.toLowerCase() === playerName.toLowerCase() || m.nickname.toLowerCase() === playerName.toLowerCase());
+      const nick = matchedMember?.nickname || matchedMember?.name || playerName;
       return {
         memberId: matchedMember?.id || `anon-${Date.now()}-${Math.random()}`,
-        memberName: matchedMember?.name || playerName,
-        memberNickname: matchedMember?.nickname || playerName,
+        memberName: nick,
+        memberNickname: nick,
         status: 'Confirmado', // Por padrão, ao escalar, o coach assume presença inicial
         updatedAt: 'Criado pela Staff'
       };
@@ -300,6 +368,8 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
       id: `scrim-${Date.now()}`,
       opponentTeam: formData.opponentTeam || 'Interno Friba',
       opponentTag: formData.opponentTag || 'FRIBA',
+      opponentTeamId: formData.opponentTeamId,
+      opponentPlayers: formData.opponentPlayers,
       title: finalTitle,
       opponentContact: formData.opponentContact,
       date: formData.date || formatDateISO(new Date()),
@@ -308,7 +378,9 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
       format: formData.format || 'MD3',
       status: formData.status || 'Confirmado',
       category: formData.category || 'Amistoso',
-      lineup: formData.lineup && formData.lineup.length > 0 ? formData.lineup : (starters.map(s => s.name).length > 0 ? starters.map(s => s.name) : ['Titulares Friba']),
+      lineup: formData.lineup && formData.lineup.length > 0 
+        ? formData.lineup.map(p => getPlayerNick(p)) 
+        : (starters.map(s => s.nickname || s.name).length > 0 ? starters.map(s => s.nickname || s.name) : ['Titulares Friba']),
       notes: formData.notes,
       attendance: initialAttendance
     };
@@ -317,72 +389,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
     setIsAddModalOpen(false);
   };
 
-  // Abrir Modal de Registro de Resultado / Pós-Treino
-  const handleOpenScoreModal = () => {
-    if (!selectedEvent) return;
-    setVodUrl(selectedEvent.vodUrl || '');
-    setResultNotes(selectedEvent.notes || '');
-    setSelectedMvp(selectedEvent.mvpMemberName || (selectedEvent.lineup?.[0] || ''));
 
-    // Inicializar partidas da série (Games)
-    if (selectedEvent.games && selectedEvent.games.length > 0) {
-      setGameDetails(selectedEvent.games);
-    } else {
-      const numGames = selectedEvent.format === 'MD1' ? 1 : selectedEvent.format === 'MD3' ? 3 : 5;
-      const initialGames: ScrimGameDetail[] = Array.from({ length: numGames }).map((_, i) => ({
-        gameNumber: i + 1,
-        scoreUs: 0,
-        scoreThem: 0,
-        mvpMemberName: selectedEvent.lineup?.[0] || '',
-        notes: ''
-      }));
-      setGameDetails(initialGames);
-    }
-
-    setIsScoreModalOpen(true);
-  };
-
-  // Salvar resultado do pós-treino com placar calculado automaticamente
-  const handleSaveResult = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedEvent) return;
-    const updated: ScrimEvent = {
-      ...selectedEvent,
-      status: 'Concluído',
-      score: { us: computedScoreUs, them: computedScoreThem },
-      vodUrl,
-      notes: resultNotes || selectedEvent.notes,
-      mvpMemberName: selectedMvp || undefined,
-      games: gameDetails
-    };
-    onUpdateScrim(updated);
-    setSelectedEvent(updated);
-    setIsScoreModalOpen(false);
-  };
-
-  // Atualizar pontos de uma partida específica da série
-  const handleGameScoreChange = (index: number, field: 'scoreUs' | 'scoreThem' | 'mvpMemberName', value: any) => {
-    setGameDetails(prev => {
-      const copy = [...prev];
-      copy[index] = { ...copy[index], [field]: value };
-      return copy;
-    });
-  };
-
-  const handleAddGameRow = () => {
-    setGameDetails(prev => [
-      ...prev,
-      {
-        gameNumber: prev.length + 1,
-        scoreUs: 0,
-        scoreThem: 0
-      }
-    ]);
-  };
-
-  const handleRemoveGameRow = (index: number) => {
-    setGameDetails(prev => prev.filter((_, i) => i !== index));
-  };
 
   // Manipulação de RSVP / Presença de Atletas
   const handleSetUserAttendance = (status: 'Confirmado' | 'Atraso' | 'Ausente', note?: string) => {
@@ -562,6 +569,17 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           </div>
 
           {canManage && (
+            <button 
+              className="btn-secondary" 
+              onClick={() => setIsOpponentsModalOpen(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px' }}
+              title="Cadastrar e gerenciar equipes oponentes e seus jogadores"
+            >
+              <Shield size={15} color="#38bdf8" /> Equipes Rivais
+            </button>
+          )}
+
+          {canManage && (
             <button className="btn-new-event" onClick={() => handleOpenSlot(formatDateISO(new Date()), '19:30')}>
               <Plus size={15} /> Novo Compromisso
             </button>
@@ -668,8 +686,8 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                           )}
 
                           {isDone && event.mvpMemberName && (
-                            <span className="m-mvp-pill" title={`MVP: ${event.mvpMemberName}`}>
-                              <Crown size={10} color="#FBBF24" /> MVP
+                            <span className="m-mvp-pill" title={`MVP: ${getPlayerNick(event.mvpMemberName)}`}>
+                              <Crown size={10} color="#FBBF24" /> MVP: {getPlayerNick(event.mvpMemberName)}
                             </span>
                           )}
                         </div>
@@ -686,7 +704,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
       {/* ========================================================================= */}
       {/* MODAL: DETALHES DO EVENTO SELECIONADO & RSVP & RELATÓRIO PÓS-TREINO */}
       {/* ========================================================================= */}
-      {selectedEvent && (
+      {selectedEvent && createPortal(
         <div className="modal-overlay" onClick={() => setSelectedEvent(null)}>
           <div className="modal-content modal-teams-detail" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -742,7 +760,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                       </div>
                       <div className="pm-mvp-text">
                         <span className="pm-mvp-lbl">MVP DA SÉRIE:</span>
-                        <strong className="pm-mvp-name">{selectedEvent.mvpMemberName}</strong>
+                        <strong className="pm-mvp-name">{getPlayerNick(selectedEvent.mvpMemberName)}</strong>
                       </div>
                     </div>
                   )}
@@ -778,13 +796,33 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                     </div>
                   )}
 
-                  {canManage && (
-                    <div className="pm-edit-btn-row">
-                      <button className="btn-text-secondary" onClick={handleOpenScoreModal}>
-                        <Edit3 size={13} /> Editar Relatório / Placar
+                  <div className="pm-edit-btn-row" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                    <button 
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => handleOpenMatchStats(selectedEvent, canManage)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(124, 58, 237, 0.35))',
+                        border: '1px solid rgba(56, 189, 248, 0.4)',
+                        color: '#fff',
+                        fontWeight: 600,
+                        padding: '8px 16px',
+                        borderRadius: 8,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <BarChart2 size={15} color="#38bdf8" /> Relatório Completo & Estatísticas
+                    </button>
+
+                    {canManage && (
+                      <button className="btn-text-secondary" onClick={() => handleOpenMatchStats(selectedEvent, true)}>
+                        <Edit3 size={13} /> Editar Relatório & Placar
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -931,23 +969,25 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                     );
                     const attRecord = selectedEvent.attendance?.find(a => 
                       a.memberName.toLowerCase() === playerName.toLowerCase() ||
+                      a.memberNickname?.toLowerCase() === playerName.toLowerCase() ||
                       (matchedMember?.id && a.memberId === matchedMember.id)
                     );
                     const status = attRecord?.status || 'Confirmado';
+                    const displayNick = matchedMember?.nickname || matchedMember?.name || playerName;
 
                     return (
                       <div key={idx} className={`att-player-card ${status.toLowerCase()}`}>
                         <div className="att-player-left">
                           <img 
                             src={matchedMember?.avatar || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=100&auto=format&fit=crop&q=80'} 
-                            alt={playerName}
+                            alt={displayNick}
                             className="att-player-avatar" 
                           />
                           <div>
                             <div className="att-name-row">
-                              <strong className="att-player-name">{matchedMember?.name || playerName}</strong>
-                              {matchedMember?.nickname && (
-                                <span className="att-player-nick">@{matchedMember.nickname}</span>
+                              <strong className="att-player-name">{displayNick}</strong>
+                              {matchedMember?.name && matchedMember?.nickname && matchedMember.name !== matchedMember.nickname && (
+                                <span className="att-player-nick">({matchedMember.name})</span>
                               )}
                               {matchedMember?.preferredLane && (
                                 <span className="att-player-lane">{matchedMember.preferredLane}</span>
@@ -1026,10 +1066,18 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
               )}
 
               <div className="footer-right-actions">
+                <button 
+                  type="button"
+                  className="btn-secondary" 
+                  onClick={() => handleOpenMatchStats(selectedEvent, canManage)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#38bdf8' }}
+                >
+                  <BarChart2 size={14} /> Relatório & Estatísticas
+                </button>
                 {canManage && selectedEvent.status !== 'Concluído' && (
                   <button 
                     className="btn-primary" 
-                    onClick={handleOpenScoreModal}
+                    onClick={() => handleOpenMatchStats(selectedEvent, true)}
                   >
                     <Check size={14} /> Registrar Resultado & Relatório
                   </button>
@@ -1040,13 +1088,14 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================= */}
       {/* MODAL: NOVO COMPROMISSO COM ESCALAÇÃO DINÂMICA DO ELENCO */}
       {/* ========================================================================= */}
-      {isAddModalOpen && (
+      {isAddModalOpen && createPortal(
         <div className="modal-overlay" onClick={() => setIsAddModalOpen(false)}>
           <div className="modal-content modal-teams-form modal-large" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -1084,26 +1133,115 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
               </div>
 
               {formData.category === 'Amistoso' && (
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label>Equipe Adversária</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ex: Keyd Stars, paiN Gaming, LOUD"
-                      value={formData.opponentTeam || ''}
-                      onChange={(e) => setFormData({ ...formData, opponentTeam: e.target.value })}
-                    />
+                <div className="opponent-selection-box" style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  marginBottom: 16
+                }}>
+                  {/* Seletor de Equipe Cadastrada */}
+                  <div className="form-group" style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label style={{ margin: 0, fontWeight: 600, color: '#f3f4f6', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Shield size={14} color="#38bdf8" /> Selecionar Equipe Adversária Cadastrada
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsOpponentsModalOpen(true)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#38bdf8',
+                          fontSize: '0.78rem',
+                          cursor: 'pointer',
+                          textDecoration: 'underline'
+                        }}
+                      >
+                        + Cadastrar Novo Rival
+                      </button>
+                    </div>
+
+                    <select
+                      value={formData.opponentTeamId || ''}
+                      onChange={(e) => {
+                        const selId = e.target.value;
+                        if (!selId) {
+                          setFormData(prev => ({
+                            ...prev,
+                            opponentTeamId: undefined,
+                            opponentPlayers: undefined
+                          }));
+                          return;
+                        }
+                        const opp = opponentTeams.find(t => t.id === selId);
+                        if (opp) {
+                          setFormData(prev => ({
+                            ...prev,
+                            opponentTeamId: opp.id,
+                            opponentTeam: opp.name,
+                            opponentTag: opp.tag,
+                            opponentContact: opp.contact || prev.opponentContact || '',
+                            opponentPlayers: [...opp.players]
+                          }));
+                        }
+                      }}
+                    >
+                      <option value="">-- Escolha uma equipe cadastrada (preenchimento automático) --</option>
+                      {opponentTeams.map(opp => (
+                        <option key={opp.id} value={opp.id}>
+                          [{opp.tag}] {opp.name} ({opp.players.length} atletas)
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <div className="form-group">
-                    <label>TAG da Equipe</label>
-                    <input
-                      type="text"
-                      placeholder="Ex: VKS, PNG, LOUD"
-                      value={formData.opponentTag || ''}
-                      onChange={(e) => setFormData({ ...formData, opponentTag: e.target.value })}
-                    />
+
+                  <div className="form-row-2">
+                    <div className="form-group">
+                      <label>Nome da Equipe</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Nightmare, LOUD, Keyd Stars"
+                        value={formData.opponentTeam || ''}
+                        onChange={(e) => setFormData({ ...formData, opponentTeam: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>TAG da Equipe</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: NM, LOUD, VKS"
+                        value={formData.opponentTag || ''}
+                        onChange={(e) => setFormData({ ...formData, opponentTag: e.target.value })}
+                      />
+                    </div>
                   </div>
+
+                  {formData.opponentPlayers && formData.opponentPlayers.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <span style={{ fontSize: '0.76rem', color: '#94a3b8', display: 'block', marginBottom: 4 }}>
+                        Lineup cadastrada do adversário ({formData.opponentPlayers.length} atletas):
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {formData.opponentPlayers.map((p, idx) => (
+                          <span
+                            key={idx}
+                            style={{
+                              fontSize: '0.75rem',
+                              padding: '2px 8px',
+                              borderRadius: 6,
+                              background: 'rgba(56, 189, 248, 0.1)',
+                              border: '1px solid rgba(56, 189, 248, 0.25)',
+                              color: '#bae6fd'
+                            }}
+                          >
+                            {formData.opponentTag ? `${formData.opponentTag} · ` : ''}{p}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1197,17 +1335,23 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                 {/* Grade de Atletas Cadastrados */}
                 <div className="members-picker-grid">
                   {members.map(member => {
-                    const isSelected = formData.lineup?.includes(member.name);
+                    const memberNick = member.nickname || member.name;
+                    const isSelected = (formData.lineup || []).some(p => {
+                      const pClean = p.trim().toLowerCase();
+                      return pClean === memberNick.toLowerCase() || pClean === member.name.toLowerCase();
+                    });
                     return (
                       <div
                         key={member.id}
                         className={`member-pick-card ${isSelected ? 'selected' : ''}`}
-                        onClick={() => handleTogglePlayerInLineup(member.name)}
+                        onClick={() => handleTogglePlayerInLineup(memberNick)}
                       >
-                        <img src={member.avatar} alt={member.name} className="pick-avatar" />
+                        <img src={member.avatar} alt={memberNick} className="pick-avatar" />
                         <div className="pick-info">
-                          <strong className="pick-name">{member.name}</strong>
-                          <span className="pick-nick">@{member.nickname}</span>
+                          <strong className="pick-name">{memberNick}</strong>
+                          {member.name && member.nickname && member.name !== member.nickname && (
+                            <span className="pick-nick">{member.name}</span>
+                          )}
                           <div className="pick-tags">
                             <span className={`pick-role-pill ${member.status === 'Titular' ? 'titular' : 'reserva'}`}>
                               {member.status || member.role}
@@ -1265,164 +1409,33 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL: REGISTRAR RESULTADO & RELATÓRIO PÓS-TREINO DETALHADO */}
-      {/* ========================================================================= */}
-      {isScoreModalOpen && selectedEvent && (
-        <div className="modal-overlay" onClick={() => setIsScoreModalOpen(false)}>
-          <div className="modal-content modal-teams-form modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div>
-                <h3>Relatório Pós-Treino & Resultado Oficial</h3>
-                <span className="modal-sub-tag">Série vs {selectedEvent.opponentTeam} • Formato {selectedEvent.format}</span>
-              </div>
-              <button onClick={() => setIsScoreModalOpen(false)} className="close-btn"><X size={18} /></button>
-            </div>
+      {/* MODAL: GERENCIAMENTO DE EQUIPES OPONENTES */}
+      <OpponentsModal
+        isOpen={isOpponentsModalOpen}
+        onClose={() => setIsOpponentsModalOpen(false)}
+        opponentTeams={opponentTeams}
+        onSaveTeam={handleSaveOpponentTeam}
+        onDeleteTeam={handleDeleteOpponentTeam}
+      />
 
-            <form onSubmit={handleSaveResult} className="teams-form">
-              {/* Placar Geral da Série Calculado Automaticamente */}
-              <div className="score-input-container">
-                <div className="team-score-block">
-                  <span className="team-name-lbl">Friba Esports</span>
-                  <div className="score-auto-badge us">
-                    {computedScoreUs}
-                  </div>
-                </div>
-                <div className="vs-sign-container">
-                  <span className="vs-sign">X</span>
-                  <span className="vs-sub-lbl">Placar da Série ({selectedEvent.format})</span>
-                  <span className="auto-calc-indicator">
-                    ⚡ Automático pelas partidas
-                  </span>
-                </div>
-                <div className="team-score-block">
-                  <span className="team-name-lbl">{selectedEvent.opponentTeam}</span>
-                  <div className="score-auto-badge them">
-                    {computedScoreThem}
-                  </div>
-                </div>
-              </div>
-
-              {/* Destaque MVP do Treino */}
-              <div className="form-group">
-                <label className="section-label">
-                  <Crown size={15} color="#FBBF24" /> MVP da Série (Destaque do Treino)
-                </label>
-                <select
-                  value={selectedMvp}
-                  onChange={(e) => setSelectedMvp(e.target.value)}
-                  className="mvp-select"
-                >
-                  <option value="">Selecione o atleta MVP...</option>
-                  {(selectedEvent.lineup || []).map((player, idx) => (
-                    <option key={idx} value={player}>👑 {player}</option>
-                  ))}
-                  {members.map(m => (
-                    <option key={m.id} value={m.name}>👑 {m.name} (@{m.nickname})</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Pontuação Aeos Partida a Partida */}
-              <div className="game-breakdown-section">
-                <div className="gb-header">
-                  <label className="section-label">
-                    <Swords size={15} /> Pontos Aeos Partida a Partida
-                  </label>
-                  <button type="button" className="btn-chip-action" onClick={handleAddGameRow}>
-                    <Plus size={12} /> Adicionar Partida
-                  </button>
-                </div>
-
-                <div className="gb-rows-list">
-                  {gameDetails.map((g, idx) => (
-                    <div key={idx} className="gb-row-item">
-                      <span className="gb-game-index">Jogo {g.gameNumber}</span>
-                      <div className="gb-inputs-pair">
-                        <div className="gb-input-sub">
-                          <span>Friba (Pontos)</span>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="0"
-                            value={g.scoreUs === 0 ? '' : g.scoreUs}
-                            onChange={(e) => handleGameScoreChange(idx, 'scoreUs', e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0)}
-                          />
-                        </div>
-                        <span className="gb-divider">x</span>
-                        <div className="gb-input-sub">
-                          <span>Rival (Pontos)</span>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="0"
-                            value={g.scoreThem === 0 ? '' : g.scoreThem}
-                            onChange={(e) => handleGameScoreChange(idx, 'scoreThem', e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0)}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="gb-outcome-pill">
-                        {(Number(g.scoreUs) || 0) === 0 && (Number(g.scoreThem) || 0) === 0 ? (
-                          <span className="badge-pending">Pendente</span>
-                        ) : (Number(g.scoreUs) || 0) > (Number(g.scoreThem) || 0) ? (
-                          <span className="badge-win">Vitória</span>
-                        ) : (Number(g.scoreUs) || 0) < (Number(g.scoreThem) || 0) ? (
-                          <span className="badge-loss">Derrota</span>
-                        ) : (
-                          <span className="badge-tie">Empate</span>
-                        )}
-                      </div>
-
-                      {gameDetails.length > 1 && (
-                        <button type="button" className="btn-remove-game" onClick={() => handleRemoveGameRow(idx)}>
-                          <Trash2 size={13} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Link do VOD */}
-              <div className="form-group">
-                <label>Link do VOD / Gravação da Partida</label>
-                <div className="input-with-icon">
-                  <Tv size={16} />
-                  <input
-                    type="url"
-                    placeholder="https://twitch.tv/videos/... ou https://youtube.com/watch?v=..."
-                    value={vodUrl}
-                    onChange={(e) => setVodUrl(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Feedback e Análise do Coach */}
-              <div className="form-group">
-                <label>Feedback Técnico & Análise do Treino</label>
-                <textarea
-                  rows={3}
-                  placeholder="Pontos fortes observados, falhas em teamfights, contestação de Rayquaza, posicionamento..."
-                  value={resultNotes}
-                  onChange={(e) => setResultNotes(e.target.value)}
-                />
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => setIsScoreModalOpen(false)}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-primary">
-                  <Check size={14} /> Salvar Relatório & Concluir
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* MODAL UNIFICADO: RELATÓRIO, ESTATÍSTICAS POR JOGADOR & RESULTADO AUTOMÁTICO */}
+      {isMatchStatsModalOpen && statsModalScrim && (
+        <MatchStatsModal
+          isOpen={isMatchStatsModalOpen}
+          onClose={() => {
+            setIsMatchStatsModalOpen(false);
+            setStatsModalScrim(null);
+          }}
+          scrim={statsModalScrim}
+          teamName={teamName}
+          canEdit={statsModalCanEdit}
+          onSaveStats={handleSaveMatchStats}
+          members={members}
+        />
       )}
 
       {/* ESTILOS VISUAIS PREMIUM MICROSOFT TEAMS + ESPORTS */}
@@ -1823,24 +1836,31 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         .modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(5, 10, 20, 0.85);
-          backdrop-filter: blur(12px);
+          width: 100vw;
+          height: 100vh;
+          background: rgba(3, 7, 18, 0.86);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 1000;
+          z-index: 99999;
           padding: 16px;
+          box-sizing: border-box;
         }
 
         .modal-content {
-          background: rgba(14, 21, 38, 0.95);
-          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(14, 21, 38, 0.98);
+          border: 1px solid rgba(255, 255, 255, 0.16);
           border-radius: 16px;
-          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08);
           overflow: hidden;
           display: flex;
           flex-direction: column;
-          max-height: 90vh;
+          max-height: calc(100vh - 32px);
+          max-height: calc(100dvh - 32px);
+          margin: auto;
+          position: relative;
         }
 
         .modal-large {
@@ -1860,6 +1880,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           align-items: flex-start;
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           background: rgba(255, 255, 255, 0.02);
+          flex-shrink: 0;
         }
 
         .modal-header-tag {
@@ -1906,6 +1927,8 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           flex-direction: column;
           gap: 16px;
           overflow-y: auto;
+          flex: 1;
+          min-height: 0;
         }
 
         /* POST-MATCH CARD */
@@ -2505,6 +2528,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           align-items: center;
           border-top: 1px solid rgba(255, 255, 255, 0.08);
           background: rgba(0, 0, 0, 0.2);
+          flex-shrink: 0;
         }
 
         .footer-right-actions {
@@ -2560,6 +2584,8 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
           flex-direction: column;
           gap: 14px;
           overflow-y: auto;
+          flex: 1;
+          min-height: 0;
         }
 
         .form-row-2 {
@@ -2581,18 +2607,128 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         }
 
         .form-group label {
-          font-size: 0.74rem;
-          font-weight: 600;
-          color: #CBD5E1;
+          font-size: 0.76rem;
+          font-weight: 700;
+          color: #94A3B8;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          margin-bottom: 2px;
         }
 
         .form-group input, .form-group select, .form-group textarea {
-          background: #0B1424;
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          border-radius: 8px;
+          color-scheme: dark;
+          background: rgba(10, 16, 32, 0.75);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 10px;
           color: white;
-          padding: 8px 10px;
-          font-size: 0.8rem;
+          padding: 10px 14px;
+          height: 42px;
+          font-size: 0.88rem;
+          font-family: var(--font-body);
+          font-weight: 500;
+          outline: none;
+          box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+          transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .form-group input::placeholder, .form-group textarea::placeholder {
+          color: rgba(148, 163, 184, 0.45);
+        }
+
+        .form-group input:hover, .form-group select:hover, .form-group textarea:hover {
+          border-color: rgba(255, 255, 255, 0.26);
+          background-color: rgba(14, 22, 44, 0.85);
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+          border-color: #0B5FFF;
+          background-color: rgba(12, 22, 44, 0.95);
+          box-shadow: 0 0 0 3px rgba(11, 95, 255, 0.22), 0 4px 16px rgba(11, 95, 255, 0.15);
+        }
+
+        .form-group select {
+          appearance: none;
+          -webkit-appearance: none;
+          -moz-appearance: none;
+          background-color: rgba(10, 16, 32, 0.85);
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+          background-repeat: no-repeat !important;
+          background-position: calc(100% - 14px) center !important;
+          background-size: 16px 16px !important;
+          padding-right: 40px !important;
+          cursor: pointer;
+          color-scheme: dark;
+        }
+
+        .form-group select:focus {
+          background-color: rgba(12, 22, 44, 0.95);
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2338BDF8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+          background-repeat: no-repeat !important;
+          background-position: calc(100% - 14px) center !important;
+          background-size: 16px 16px !important;
+        }
+
+        .form-group select option, .form-group select optgroup {
+          background-color: #0b1329 !important;
+          color: #f1f5f9 !important;
+          padding: 12px 14px;
+          font-size: 0.9rem;
+          font-weight: 500;
+        }
+
+        .form-group select option:checked {
+          background-color: #0284c7 !important;
+          color: #ffffff !important;
+        }
+
+        .form-group input[type="date"],
+        .form-group input[type="time"] {
+          cursor: pointer;
+          letter-spacing: 0.03em;
+          color-scheme: dark;
+          font-family: inherit;
+          font-weight: 500;
+          position: relative;
+        }
+
+        .form-group input[type="date"]::-webkit-calendar-picker-indicator,
+        .form-group input[type="time"]::-webkit-calendar-picker-indicator {
+          filter: invert(0.85) sepia(20%) saturate(300%) hue-rotate(180deg) brightness(1.2);
+          cursor: pointer;
+          opacity: 0.85;
+          transition: opacity 0.2s, filter 0.2s, transform 0.15s, background 0.2s;
+          padding: 5px;
+          border-radius: 6px;
+          margin-right: 2px;
+        }
+
+        .form-group input[type="date"]::-webkit-calendar-picker-indicator:hover,
+        .form-group input[type="time"]::-webkit-calendar-picker-indicator:hover {
+          opacity: 1;
+          filter: invert(1) brightness(1.3);
+          background: rgba(56, 189, 248, 0.2);
+          transform: scale(1.1);
+        }
+
+        .form-group input[type="date"]::-webkit-datetime-edit,
+        .form-group input[type="time"]::-webkit-datetime-edit {
+          padding: 0;
+          color: #f3f4f6;
+        }
+
+        .form-group input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+        .form-group input[type="time"]::-webkit-datetime-edit-fields-wrapper {
+          padding: 0;
+        }
+
+        .form-group textarea {
+          height: auto;
+          min-height: 90px;
+          resize: vertical;
+          line-height: 1.5;
         }
 
         /* SELEÇÃO DE LINEUP NO FORM */
@@ -2782,35 +2918,49 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
 
         .custom-player-add-row {
           display: flex;
-          gap: 6px;
+          gap: 8px;
         }
 
         .custom-player-add-row input {
           flex: 1;
-          background: #0B1424;
-          border: 1px solid rgba(255, 255, 255, 0.12);
+          height: 38px;
+          color-scheme: dark;
+          background: rgba(10, 16, 32, 0.75);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.14);
           color: white;
-          padding: 6px 10px;
-          border-radius: 6px;
-          font-size: 0.75rem;
+          padding: 8px 12px;
+          border-radius: 8px;
+          font-size: 0.82rem;
+          outline: none;
+          transition: all 0.2s;
+        }
+
+        .custom-player-add-row input:focus {
+          border-color: #0B5FFF;
+          box-shadow: 0 0 0 3px rgba(11, 95, 255, 0.2);
         }
 
         .btn-add-custom-p {
-          background: rgba(255, 255, 255, 0.08);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          color: #CBD5E1;
-          font-size: 0.72rem;
-          padding: 6px 10px;
-          border-radius: 6px;
+          background: rgba(11, 95, 255, 0.15);
+          border: 1px solid rgba(11, 95, 255, 0.35);
+          color: #93C5FD;
+          font-size: 0.78rem;
+          font-weight: 700;
+          padding: 8px 14px;
+          height: 38px;
+          border-radius: 8px;
           display: flex;
           align-items: center;
-          gap: 4px;
+          gap: 6px;
           cursor: pointer;
+          transition: all 0.2s;
         }
 
         .btn-add-custom-p:hover {
-          background: rgba(255, 255, 255, 0.15);
-          color: white;
+          background: #0B5FFF;
+          color: #FFFFFF;
+          border-color: #0B5FFF;
         }
 
         /* SCORE & GAME BREAKDOWN MODAL */
@@ -2894,10 +3044,11 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         }
 
         .mvp-select {
-          background: #0B1424;
+          background-color: #0B1424;
           border: 1px solid rgba(251, 191, 36, 0.4);
           color: #FDE68A;
           font-weight: 600;
+          color-scheme: dark;
         }
 
         .game-breakdown-section {
@@ -2959,13 +3110,23 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         }
 
         .gb-input-sub input {
-          background: #0B1424;
-          border: 1px solid rgba(255, 255, 255, 0.15);
+          height: 38px;
+          color-scheme: dark;
+          background: rgba(10, 16, 32, 0.75);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.14);
           color: white;
-          padding: 4px 8px;
-          border-radius: 6px;
-          font-size: 0.8rem;
+          padding: 6px 10px;
+          border-radius: 8px;
+          font-size: 0.88rem;
           font-weight: 700;
+          outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .gb-input-sub input:focus {
+          border-color: #0B5FFF;
+          box-shadow: 0 0 0 3px rgba(11, 95, 255, 0.22);
         }
 
         .gb-divider {

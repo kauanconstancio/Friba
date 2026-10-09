@@ -120,10 +120,10 @@ export function App() {
 
   // 1. Carregar dados de todas as tabelas do Supabase
   useEffect(() => {
-    dbFetchMembers().then(data => { if (data && data.length) setMembers(data); });
-    dbFetchScrims().then(data => { if (data && data.length) setScrims(data); });
-    dbFetchStrategyPlans().then(data => { if (data && data.length) setPresets(data); });
-    dbFetchAnnouncements().then(data => { if (data && data.length) setAnnouncements(data); });
+    dbFetchMembers().then(data => { if (data) setMembers(data); });
+    dbFetchScrims().then(data => { if (data) setScrims(data); });
+    dbFetchStrategyPlans().then(data => { if (data) setPresets(data); });
+    dbFetchAnnouncements().then(data => { if (data) setAnnouncements(data); });
   }, []);
 
   // Sincronizar membros ao focar na janela ou voltar para a aba
