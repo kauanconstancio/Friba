@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -7,10 +7,10 @@ import {
   Trash2, 
   Search, 
   Edit3, 
-  Check,
-  Tv,
-  Play,
-  Sparkles
+  Check, 
+  Tv, 
+  Play, 
+  Sparkles 
 } from 'lucide-react';
 import type { ScrimEvent, ScrimGameDetail, GamePlayerStats, TeamMember } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
@@ -50,8 +50,14 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
   } | null>(null);
   const [pokeSearch, setPokeSearch] = useState('');
 
+  const filteredPokemons = useMemo(() => {
+    if (!pokeSearch.trim()) return POKEMON_ROSTER.slice(0, 40);
+    const q = pokeSearch.toLowerCase();
+    return POKEMON_ROSTER.filter(p => p.name.toLowerCase().includes(q) || p.role.toLowerCase().includes(q));
+  }, [pokeSearch]);
+
   // Helper para obter o Nick In-Game (IGN) do atleta em vez do nome cadastrado
-  const getPlayerNick = (rawName: string): string => {
+  const getPlayerNick = useCallback((rawName: string): string => {
     if (!rawName) return '';
     const clean = rawName.trim().toLowerCase();
     const found = members.find(m => 
@@ -63,7 +69,7 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
       return found.nickname;
     }
     return rawName;
-  };
+  }, [members]);
 
   // Fallback de jogadores nossos convertidos para Nick In-Game
   const defaultUsPlayers = useMemo(() => {
@@ -85,7 +91,7 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
       }
     }
     return baseList;
-  }, [scrim.lineup, members]);
+  }, [scrim.lineup, members, getPlayerNick]);
 
   // Fallback de jogadores oponentes
   const defaultThemPlayers = useMemo(() => {
@@ -96,7 +102,7 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
   }, [scrim.opponentPlayers]);
 
   // Gerar dados para cada partida e garantir que pontuações totais sejam somadas dos jogadores
-  const initializeGame = (gameNum: number, existing?: ScrimGameDetail): ScrimGameDetail => {
+  const initializeGame = useCallback((gameNum: number, existing?: ScrimGameDetail): ScrimGameDetail => {
     if (existing && existing.usPlayersStats && existing.usPlayersStats.length > 0) {
       const computedUs = (existing.usPlayersStats || []).reduce((acc, curr) => acc + (parseInt(String(curr.points), 10) || 0), 0);
       const computedThem = (existing.themPlayersStats || []).reduce((acc, curr) => acc + (parseInt(String(curr.points), 10) || 0), 0);
@@ -159,7 +165,7 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
       themPlayersStats: themStats,
       notes: existing?.notes || '',
     };
-  };
+  }, [teamName, scrim.opponentTag, defaultUsPlayers, defaultThemPlayers, getPlayerNick]);
 
   const [gamesList, setGamesList] = useState<ScrimGameDetail[]>(() => {
     if (scrim.games && scrim.games.length > 0) {
@@ -172,26 +178,26 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
     return list;
   });
 
-  // Atualizar dados internos quando a scrim mudar ou modal for aberto
-  useEffect(() => {
-    if (scrim && isOpen) {
-      setVodUrl(scrim.vodUrl || '');
-      setResultNotes(scrim.notes || '');
-      setSelectedMvp(scrim.mvpMemberName || '');
-      if (scrim.games && scrim.games.length > 0) {
-        setGamesList(scrim.games.map((g, idx) => initializeGame(g.gameNumber || idx + 1, g)));
-      } else {
-        const list: ScrimGameDetail[] = [];
-        const count = Math.max(1, scrim.format === 'MD5' ? 5 : scrim.format === 'MD3' ? 3 : 1);
-        for (let i = 1; i <= count; i++) {
-          list.push(initializeGame(i));
-        }
-        setGamesList(list);
+  // Sincronizar dados internos caso a scrim selecionada mude
+  const [prevScrimId, setPrevScrimId] = useState(scrim.id);
+  if (scrim.id !== prevScrimId) {
+    setPrevScrimId(scrim.id);
+    setVodUrl(scrim.vodUrl || '');
+    setResultNotes(scrim.notes || '');
+    setSelectedMvp(scrim.mvpMemberName || '');
+    if (scrim.games && scrim.games.length > 0) {
+      setGamesList(scrim.games.map((g, idx) => initializeGame(g.gameNumber || idx + 1, g)));
+    } else {
+      const list: ScrimGameDetail[] = [];
+      const count = Math.max(1, scrim.format === 'MD5' ? 5 : scrim.format === 'MD3' ? 3 : 1);
+      for (let i = 1; i <= count; i++) {
+        list.push(initializeGame(i));
       }
-      setIsEditing(Boolean(canEdit));
-      setActiveGameIdx(0);
+      setGamesList(list);
     }
-  }, [scrim.id, isOpen, canEdit]);
+    setIsEditing(Boolean(canEdit));
+    setActiveGameIdx(0);
+  }
 
   if (!isOpen) return null;
 
@@ -343,12 +349,6 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
     }
     onClose();
   };
-
-  const filteredPokemons = useMemo(() => {
-    if (!pokeSearch.trim()) return POKEMON_ROSTER.slice(0, 40);
-    const q = pokeSearch.toLowerCase();
-    return POKEMON_ROSTER.filter(p => p.name.toLowerCase().includes(q) || p.role.toLowerCase().includes(q));
-  }, [pokeSearch]);
 
   return createPortal(
     <div className="modal-overlay match-stats-backdrop" onClick={onClose}>
@@ -1986,6 +1986,52 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
           }
           .match-stats-bottom-actions {
             padding: 10px 18px;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .match-stats-card-main {
+            width: 98% !important;
+            height: calc(100dvh - 16px) !important;
+            max-height: calc(100dvh - 16px) !important;
+            border-radius: 12px;
+          }
+          .match-stats-header {
+            padding: 12px 14px 10px;
+          }
+          .match-stats-title {
+            font-size: 1.15rem;
+          }
+          .match-games-tabs-bar {
+            padding: 8px 12px;
+            overflow-x: auto;
+            flex-wrap: nowrap;
+          }
+          .match-stats-scrollable-body {
+            padding: 10px 12px;
+            gap: 10px;
+          }
+          .series-scoreboard-card {
+            flex-direction: column;
+            padding: 10px 12px;
+            gap: 8px;
+          }
+          .series-team-box {
+            min-width: auto;
+            width: 100%;
+            text-align: center !important;
+            align-items: center !important;
+          }
+          .team-stats-block {
+            padding: 10px 12px;
+            gap: 8px;
+          }
+          .match-stats-bottom-actions {
+            padding: 10px 12px;
+          }
+          .btn-primary-glow {
+            width: 100%;
+            justify-content: center;
           }
         }
       `}</style>
