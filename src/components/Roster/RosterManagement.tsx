@@ -1528,8 +1528,48 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           color: #F8FAFC;
         }
 
-        @media (max-width: 480px) {
-          .form-row-2 {
+        @media (max-width: 640px) {
+          .roster-view-container {
+            padding: 12px 12px 28px;
+            gap: 20px;
+          }
+
+          .roster-header-bar {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+
+          .roster-titles h1 {
+            font-size: 1.35rem;
+          }
+
+          .roster-actions {
+            flex-direction: column;
+            width: 100%;
+            gap: 8px;
+          }
+
+          .roster-search-box {
+            min-width: 100%;
+            width: 100%;
+          }
+
+          .add-member-btn {
+            width: 100%;
+            justify-content: center;
+            padding: 10px 14px;
+            font-size: 0.86rem;
+          }
+
+          .player-card {
+            padding: 14px 14px;
+            gap: 12px;
+            border-radius: 14px;
+          }
+
+          .form-row-2,
+          .form-row-3 {
             grid-template-columns: 1fr;
           }
         }

@@ -929,9 +929,170 @@ export const Dashboard: React.FC<DashboardProps> = ({
         .status-pill.agendado { background: rgba(245, 158, 11, 0.15); color: #FCD34D; border: 1px solid rgba(245, 158, 11, 0.3); }
         .status-pill.concluído { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
 
+        /* ======================================================== */
+        /* RESPONSIVIDADE MOBILE REFINADA (DASHBOARD)               */
+        /* ======================================================== */
         @media (max-width: 860px) {
-          .metrics-row { grid-template-columns: 1fr; }
           .dash-cards-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 680px) {
+          .dash-clean {
+            padding: 12px 12px 28px;
+            gap: 14px;
+          }
+
+          .dash-hero {
+            padding: 16px 14px;
+            border-radius: 16px;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+
+          .dash-hero-left {
+            gap: 12px;
+            align-items: center;
+          }
+
+          .hero-logo {
+            width: 54px;
+            height: 54px;
+            border-radius: 10px;
+          }
+
+          .hero-title {
+            font-size: 1.45rem;
+          }
+
+          .hero-sub {
+            font-size: 0.76rem;
+            line-height: 1.35;
+          }
+
+          .hero-quick-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            width: 100%;
+            gap: 6px;
+          }
+
+          .hero-quick-actions button {
+            width: 100%;
+            justify-content: center;
+            font-size: 0.76rem;
+            padding: 8px 4px;
+            gap: 4px;
+          }
+
+          /* Métricas em 3 colunas compactas para visualização imediata */
+          .metrics-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+          }
+
+          .metric-box {
+            padding: 10px 6px;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 4px;
+            border-radius: 14px;
+          }
+
+          .m-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+          }
+
+          .m-icon svg {
+            width: 16px;
+            height: 16px;
+          }
+
+          .m-val {
+            font-size: 1.15rem;
+          }
+
+          .m-lbl {
+            font-size: 0.65rem;
+          }
+
+          /* Cards do Mural e Próximos Eventos */
+          .friba-custom-card {
+            padding: 16px 14px;
+            border-radius: 16px;
+            min-height: auto;
+            gap: 12px;
+          }
+
+          .friba-card-title {
+            font-size: 1.15rem;
+          }
+
+          .card-novo-btn {
+            padding: 3px 8px;
+            font-size: 0.7rem;
+          }
+
+          .friba-arrow-link {
+            font-size: 0.72rem;
+          }
+
+          .events-filter-bar {
+            gap: 4px;
+            padding: 3px;
+          }
+
+          .event-filter-pill {
+            padding: 5px 6px;
+            font-size: 0.68rem;
+          }
+
+          .event-item-row {
+            padding: 8px 10px;
+            gap: 10px;
+          }
+
+          .event-time-col {
+            padding: 4px 6px;
+            min-width: 48px;
+          }
+
+          .event-date-txt {
+            font-size: 0.68rem;
+          }
+
+          .event-hour-txt {
+            font-size: 0.64rem;
+          }
+
+          .event-name {
+            font-size: 0.85rem;
+          }
+
+          .event-sub-line {
+            font-size: 0.68rem;
+          }
+
+          .status-pill {
+            font-size: 0.62rem;
+            padding: 2px 6px;
+          }
+
+          .mural-item-row {
+            padding: 10px 12px;
+          }
+
+          .mural-item-title {
+            font-size: 0.86rem;
+          }
+
+          .mural-item-content {
+            font-size: 0.78rem;
+          }
         }
       `}</style>
     </div>

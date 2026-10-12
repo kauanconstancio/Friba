@@ -9,6 +9,8 @@ import {
   Check,
   Bot,
   ChevronDown,
+  Swords,
+  Shield,
 } from "lucide-react";
 import type { PokemonData, PokemonRole } from "../../types";
 import { POKEMON_ROSTER } from "../../data/pokemonData";
@@ -57,6 +59,7 @@ export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
   const [vsAi, setVsAi] = useState(false);
   const [search, setSearch] = useState("");
   const [battleTypeFilter, setBattleTypeFilter] = useState<string>("All");
+  const [mobileDraftTab, setMobileDraftTab] = useState<"roster" | "blue" | "orange">("roster");
 
   useEffect(() => {
     let isMounted = true;
@@ -359,9 +362,82 @@ export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
       </div>
 
       {/* ========================================================================= */}
+      {/* NAVEGAÇÃO & RESUMO MOBILE (EXCLUSIVO PARA SMARTPHONES) */}
+      {/* ========================================================================= */}
+      <div className="draft-mobile-summary-bar">
+        {/* Resumo compacto de Picks Azul */}
+        <div className="mobile-picks-mini-strip blue-strip" onClick={() => setMobileDraftTab('blue')}>
+          <div className="mini-strip-header">
+            <span className="mini-strip-title text-blue">🔵 {teamName || 'Friba'}</span>
+            <span className="mini-strip-badge">{bluePicks.filter(Boolean).length}/5</span>
+          </div>
+          <div className="mini-avatars-row">
+            {bluePicks.map((pickId, idx) => {
+              const poke = getPokemon(pickId);
+              const isCurrent = currentStep?.type === 'pick' && currentStep?.team === 'blue' && currentStep?.slotIndex === idx;
+              return (
+                <div key={idx} className={`mini-pick-slot blue ${isCurrent ? 'active' : ''} ${poke ? 'filled' : ''}`}>
+                  {poke ? <img src={poke.sprite} alt={poke.name} className="mini-poke-img" /> : <span>{idx + 1}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Resumo compacto de Picks Laranja */}
+        <div className="mobile-picks-mini-strip orange-strip" onClick={() => setMobileDraftTab('orange')}>
+          <div className="mini-strip-header">
+            <span className="mini-strip-title text-orange">🔴 Rival</span>
+            <span className="mini-strip-badge">{orangePicks.filter(Boolean).length}/5</span>
+          </div>
+          <div className="mini-avatars-row">
+            {orangePicks.map((pickId, idx) => {
+              const poke = getPokemon(pickId);
+              const isCurrent = currentStep?.type === 'pick' && currentStep?.team === 'orange' && currentStep?.slotIndex === idx;
+              return (
+                <div key={idx} className={`mini-pick-slot orange ${isCurrent ? 'active' : ''} ${poke ? 'filled' : ''}`}>
+                  {poke ? <img src={poke.sprite} alt={poke.name} className="mini-poke-img" /> : <span>{idx + 1}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ABAS MOBILE DE NAVEGAÇÃO ENTRE OS TIMES E A GRADE */}
+      <div className="draft-mobile-nav-tabs">
+        <button
+          type="button"
+          className={`draft-tab-btn blue ${mobileDraftTab === 'blue' ? 'active' : ''}`}
+          onClick={() => setMobileDraftTab('blue')}
+        >
+          <Shield size={14} />
+          <span>Friba ({bluePicks.filter(Boolean).length}/5)</span>
+        </button>
+
+        <button
+          type="button"
+          className={`draft-tab-btn roster ${mobileDraftTab === 'roster' ? 'active' : ''}`}
+          onClick={() => setMobileDraftTab('roster')}
+        >
+          <Swords size={14} />
+          <span>Pokémons</span>
+        </button>
+
+        <button
+          type="button"
+          className={`draft-tab-btn orange ${mobileDraftTab === 'orange' ? 'active' : ''}`}
+          onClick={() => setMobileDraftTab('orange')}
+        >
+          <Shield size={14} />
+          <span>Rival ({orangePicks.filter(Boolean).length}/5)</span>
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
       {/* CORPO PRINCIPAL: 5 PICKS AZUL (ESQ) | GRADE POKÉMON (CENTRO) | 5 PICKS LARANJA (DIR) */}
       {/* ========================================================================= */}
-      <div className="draft-main-layout">
+      <div className={`draft-main-layout mobile-view-${mobileDraftTab}`}>
         {/* COLUNA ESQUERDA: 5 PICKS TIME AZUL (FRIBA) */}
         <div className="team-picks-col blue-team-col">
           {bluePicks.map((pickId, idx) => {
@@ -1214,6 +1290,302 @@ export const DraftSimulator: React.FC<DraftSimulatorProps> = ({ teamName }) => {
 
         .unite-db-link:hover {
           text-decoration: underline;
+        }
+
+        /* ========================================================= */
+        /* COMPONENTES MOBILE: ESCONDIDOS NO DESKTOP (> 900px)       */
+        /* ========================================================= */
+        .draft-mobile-summary-bar,
+        .draft-mobile-nav-tabs {
+          display: none;
+        }
+
+        /* ========================================================= */
+        /* RESPONSIVIDADE MOBILE COMPLETA PARA DRAFT COMPETITIVO     */
+        /* ========================================================= */
+        @media (max-width: 900px) {
+          .unite-draft-container {
+            padding: 10px 10px 28px;
+            gap: 12px;
+          }
+
+          /* Topo do Draft em Telas Menores */
+          .draft-top-section {
+            flex-direction: column;
+            gap: 12px;
+            align-items: stretch;
+            background: rgba(10, 16, 32, 0.7);
+            padding: 12px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+          }
+
+          .draft-center-header {
+            order: 1;
+            width: 100%;
+          }
+
+          .timer-control-row {
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+          }
+
+          .start-timer-btn {
+            font-size: 0.78rem;
+            padding: 7px 14px;
+          }
+
+          .turn-indicator-pill {
+            font-size: 0.74rem;
+            padding: 5px 10px;
+          }
+
+          /* Bans posicionados lado a lado no mobile */
+          .bans-group {
+            justify-content: center;
+            gap: 6px;
+          }
+
+          .bans-group.blue-bans {
+            order: 2;
+          }
+
+          .bans-group.orange-bans {
+            order: 3;
+          }
+
+          .ban-box {
+            width: 44px;
+            height: 44px;
+          }
+
+          .banned-poke-img {
+            width: 32px;
+            height: 32px;
+          }
+
+          /* Faixa de Resumo Compacto dos Picks no Mobile */
+          .draft-mobile-summary-bar {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            background: rgba(10, 16, 32, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            padding: 8px 10px;
+          }
+
+          .mobile-picks-mini-strip {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 8px;
+            transition: background 0.15s;
+          }
+
+          .mobile-picks-mini-strip:hover {
+            background: rgba(255, 255, 255, 0.05);
+          }
+
+          .mini-strip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+
+          .mini-strip-title {
+            font-size: 0.74rem;
+            font-weight: 800;
+          }
+
+          .text-blue { color: #60A5FA; }
+          .text-orange { color: #FB923C; }
+
+          .mini-strip-badge {
+            font-size: 0.66rem;
+            font-weight: 800;
+            color: #94A3B8;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 1px 5px;
+            border-radius: 9999px;
+          }
+
+          .mini-avatars-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          }
+
+          .mini-pick-slot {
+            width: 26px;
+            height: 26px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: #64748B;
+            overflow: hidden;
+          }
+
+          .mini-pick-slot.blue.active {
+            border-color: #38BDF8;
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+          }
+
+          .mini-pick-slot.orange.active {
+            border-color: #FB923C;
+            box-shadow: 0 0 8px rgba(251, 146, 60, 0.5);
+          }
+
+          .mini-pick-slot.filled {
+            border-color: rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.12);
+          }
+
+          .mini-poke-img {
+            width: 24px;
+            height: 24px;
+            object-fit: contain;
+          }
+
+          /* Abas de Navegação Mobile */
+          .draft-mobile-nav-tabs {
+            display: flex;
+            gap: 4px;
+            background: rgba(8, 12, 24, 0.85);
+            padding: 4px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+          }
+
+          .draft-tab-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            padding: 9px 4px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #94A3B8;
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+
+          .draft-tab-btn.active.blue {
+            background: rgba(11, 95, 255, 0.25);
+            border-color: #38BDF8;
+            color: #FFFFFF;
+          }
+
+          .draft-tab-btn.active.roster {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.35);
+            color: #FFFFFF;
+          }
+
+          .draft-tab-btn.active.orange {
+            background: rgba(249, 115, 22, 0.25);
+            border-color: #FB923C;
+            color: #FFFFFF;
+          }
+
+          /* Alternância das Colunas no Mobile */
+          .draft-main-layout {
+            display: flex !important;
+            flex-direction: column;
+            gap: 12px;
+          }
+
+          .draft-main-layout.mobile-view-roster .team-picks-col {
+            display: none !important;
+          }
+
+          .draft-main-layout.mobile-view-roster .draft-center-roster {
+            display: flex !important;
+            width: 100%;
+          }
+
+          .draft-main-layout.mobile-view-blue .draft-center-roster,
+          .draft-main-layout.mobile-view-blue .orange-team-col {
+            display: none !important;
+          }
+
+          .draft-main-layout.mobile-view-blue .blue-team-col {
+            display: flex !important;
+            width: 100%;
+          }
+
+          .draft-main-layout.mobile-view-orange .draft-center-roster,
+          .draft-main-layout.mobile-view-orange .blue-team-col {
+            display: none !important;
+          }
+
+          .draft-main-layout.mobile-view-orange .orange-team-col {
+            display: flex !important;
+            width: 100%;
+          }
+
+          /* Barra de Ferramentas / Filtros no Mobile */
+          .roster-toolbar {
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+
+          .search-input-wrap {
+            flex: 1 1 100%;
+            min-width: 100%;
+          }
+
+          .filter-select-wrap {
+            flex: 1;
+          }
+
+          /* Grade de Cards de Pokémon */
+          .pokemons-cards-grid {
+            grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
+            gap: 6px;
+            max-height: calc(100dvh - 350px);
+          }
+
+          .poke-card-img {
+            width: 50px;
+            height: 50px;
+          }
+
+          .poke-card-name {
+            font-size: 0.52rem;
+          }
+
+          /* Slots dos Picks em Largura Total no Mobile */
+          .player-pick-slot {
+            height: 64px;
+            padding: 6px 12px;
+          }
+
+          .picked-poke-box {
+            padding: 4px 10px;
+          }
+
+          .picked-poke-img {
+            width: 48px;
+            height: 48px;
+          }
+
+          .picked-poke-name {
+            font-size: 0.9rem;
+          }
         }
       `}</style>
     </div>

@@ -434,6 +434,15 @@ export function App() {
           padding-bottom: 110px;
         }
 
+        @media (max-width: 768px) {
+          .app-main-content {
+            padding-bottom: calc(75px + var(--sab, 12px));
+          }
+          .app-footer {
+            display: none !important;
+          }
+        }
+
         .app-footer {
           margin-top: auto;
           height: 38px;

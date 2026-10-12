@@ -917,8 +917,9 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
         .invite-modal-backdrop {
           position: fixed;
           inset: 0;
-          width: 100vw;
-          height: 100vh;
+          width: 100%;
+          height: 100%;
+          height: 100dvh;
           background: rgba(4, 7, 14, 0.88);
           backdrop-filter: blur(14px);
           -webkit-backdrop-filter: blur(14px);
@@ -926,7 +927,7 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 20px;
+          padding: 16px;
           box-sizing: border-box;
           animation: fadeIn 0.25s ease;
         }
@@ -1850,6 +1851,60 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
           max-width: 450px;
           margin: 0;
           line-height: 1.5;
+        }
+
+        /* ======================================================== */
+        /* RESPONSIVIDADE MOBILE REFINADA (MODAL DE CONVITE)        */
+        /* ======================================================== */
+        @media (max-width: 650px) {
+          .invite-modal-backdrop {
+            padding: 8px;
+          }
+
+          .invite-modal-card {
+            max-height: calc(100dvh - 16px);
+            border-radius: 16px;
+          }
+
+          .invite-modal-header {
+            padding: 16px 14px 12px;
+          }
+
+          .validate-step-box {
+            padding: 24px 16px;
+            gap: 16px;
+          }
+
+          .code-input {
+            font-size: 1rem;
+            letter-spacing: 0.1em;
+            padding: 10px;
+          }
+
+          .invite-role-granted-banner {
+            padding: 10px 14px;
+            gap: 10px;
+          }
+
+          .player-form-scrollable {
+            padding: 14px;
+            gap: 16px;
+          }
+
+          .invite-modal-footer {
+            padding: 12px 14px;
+          }
+
+          .btn-submit-player,
+          .btn-primary-action {
+            width: 100%;
+            justify-content: center;
+            font-size: 0.88rem;
+          }
+
+          .success-step-box {
+            padding: 32px 16px;
+          }
         }
       `}</style>
     </div>

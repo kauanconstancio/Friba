@@ -3199,19 +3199,93 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
         }
 
         @media (max-width: 768px) {
+          .teams-calendar-wrapper {
+            padding: 10px 10px 28px;
+            gap: 12px;
+          }
+
           .teams-top-bar {
             flex-direction: column;
             align-items: stretch;
+            padding: 12px 12px;
+            gap: 10px;
           }
-          .teams-nav-controls, .teams-view-and-actions {
+
+          .teams-nav-controls {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
+            width: 100%;
+          }
+
+          .date-stepper-group {
+            width: 100%;
             justify-content: space-between;
           }
-          .month-days-header, .month-grid {
-            font-size: 0.65rem;
+
+          .teams-view-and-actions {
+            flex-direction: column;
+            align-items: stretch;
+            width: 100%;
+            gap: 8px;
           }
+
+          .category-pills {
+            width: 100%;
+            display: flex;
+          }
+
+          .cat-pill {
+            flex: 1;
+            text-align: center;
+          }
+
+          .btn-new-event {
+            width: 100%;
+            justify-content: center;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+          }
+
+          .month-days-header {
+            font-size: 0.62rem;
+          }
+
+          .month-grid {
+            gap: 1px;
+          }
+
+          .month-cell {
+            min-height: 54px;
+            padding: 3px 2px;
+          }
+
+          .month-day-num {
+            width: 20px;
+            height: 20px;
+            font-size: 0.7rem;
+          }
+
+          .month-event-card {
+            padding: 2px 4px;
+          }
+
+          .m-time-pill {
+            font-size: 0.58rem;
+          }
+
+          .m-team-name {
+            font-size: 0.62rem;
+          }
+
+          .m-card-bottom {
+            display: none;
+          }
+
           .form-row-2, .form-row-3 {
             grid-template-columns: 1fr;
           }
+
           .gb-row-item {
             flex-direction: column;
             align-items: stretch;

@@ -2973,6 +2973,185 @@ export const TacticalMap: React.FC<TacticalMapProps> = ({
           overflow: hidden;
           text-overflow: ellipsis;
         }
+
+        /* ======================================================== */
+        /* RESPONSIVIDADE MOBILE REFINADA (PRANCHETA TÁTICA)        */
+        /* ======================================================== */
+        @media (max-width: 768px) {
+          .tactical-board-page {
+            padding: 8px 8px 28px;
+            gap: 10px;
+          }
+
+          .tactical-header-bar {
+            flex-direction: column;
+            gap: 8px;
+            align-items: stretch;
+            padding: 8px 10px;
+          }
+
+          .current-map-badge {
+            justify-content: center;
+            font-size: 0.72rem;
+            padding: 6px 10px;
+          }
+
+          .map-badge-tag {
+            display: none;
+          }
+
+          .tactical-top-actions {
+            justify-content: center;
+            gap: 8px;
+          }
+
+          .action-btn-pill {
+            flex: 1;
+            justify-content: center;
+            padding: 7px 10px;
+            font-size: 0.72rem;
+          }
+
+          /* Palco: layout em coluna para liberar 100% da largura ao mapa */
+          .tactical-top-stage-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            position: relative;
+          }
+
+          /* Toolbar de Ferramentas: vira barra horizontal compacta acima do mapa */
+          .tactical-left-tools {
+            flex-direction: row;
+            width: 100%;
+            border-radius: 12px;
+            padding: 6px 8px;
+            overflow-x: auto;
+            gap: 8px;
+            justify-content: flex-start;
+            scrollbar-width: none;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+          }
+
+          .tactical-left-tools::-webkit-scrollbar {
+            display: none;
+          }
+
+          .tools-button-group {
+            flex-direction: row;
+            width: auto;
+            gap: 6px;
+          }
+
+          .tool-icon-btn {
+            width: 38px;
+            height: 38px;
+            flex-shrink: 0;
+          }
+
+          .tools-color-palette {
+            flex-direction: row;
+            border-top: none;
+            border-left: 1px solid rgba(255, 255, 255, 0.14);
+            padding-top: 0;
+            padding-left: 8px;
+            gap: 6px;
+            flex-shrink: 0;
+          }
+
+          .palette-label,
+          .tools-stroke-section {
+            display: none;
+          }
+
+          .color-dot-btn {
+            width: 22px;
+            height: 22px;
+          }
+
+          /* Controles de Zoom: mini-widget flutuante no canto do mapa */
+          .tactical-right-zoom-dock {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            z-index: 40;
+            background: rgba(8, 14, 28, 0.88);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 10px;
+            padding: 4px;
+            flex-direction: row;
+            width: auto;
+            height: auto;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+          }
+
+          .zoom-dock-group {
+            flex-direction: row;
+            gap: 3px;
+          }
+
+          .zoom-dock-btn {
+            width: 30px;
+            height: 30px;
+          }
+
+          .zoom-dock-value {
+            height: 30px;
+            padding: 0 6px;
+          }
+
+          .zoom-dock-presets,
+          .zoom-dock-divider {
+            display: none;
+          }
+
+          .tactical-center-viewport {
+            height: 320px;
+            border-radius: 14px;
+          }
+
+          .map-bottom-hint-banner {
+            font-size: 0.65rem;
+            padding: 6px 10px;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            transform: none;
+            text-align: center;
+          }
+
+          /* Bandeja inferior de Pokémon / Jogadores */
+          .tactical-bottom-deck {
+            padding: 10px;
+            border-radius: 14px;
+          }
+
+          .deck-toolbar-row {
+            flex-direction: column;
+            gap: 8px;
+            align-items: stretch;
+          }
+
+          .deck-tabs-pills {
+            width: 100%;
+          }
+
+          .deck-tab-pill-btn {
+            flex: 1;
+            justify-content: center;
+          }
+
+          .deck-search-filter-group {
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+          }
+
+          .deck-search-box {
+            width: 100%;
+          }
+        }
       `}</style>
     </div>
   );

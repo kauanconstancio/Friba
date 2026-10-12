@@ -1213,6 +1213,52 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
           gap: 8px;
         }
 
+        /* ======================================================== */
+        /* RESPONSIVIDADE MOBILE REFINADA (CONFIGURAÇÕES DO TIME)   */
+        /* ======================================================== */
+        @media (max-width: 640px) {
+          .settings-container {
+            padding: 10px 10px 28px;
+            gap: 14px;
+          }
+
+          .settings-header-banner {
+            padding: 16px 14px;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 14px;
+            border-radius: 14px;
+          }
+
+          .settings-title {
+            font-size: 1.35rem;
+          }
+
+          .settings-subtitle {
+            font-size: 0.78rem;
+          }
+
+          .owner-profile-card {
+            width: 100%;
+          }
+
+          .settings-card {
+            padding: 16px 14px;
+            border-radius: 14px;
+            gap: 14px;
+          }
+
+          .role-options-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+          }
+
+          .members-table-wrapper,
+          .invites-table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+        }
       `}</style>
     </div>
   );

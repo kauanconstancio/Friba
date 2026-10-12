@@ -1148,17 +1148,179 @@ export const Navbar: React.FC<NavbarProps> = ({
           box-shadow: 0 0 8px var(--friba-red);
         }
 
-        @media (max-width: 680px) {
-          .apple-glass-dock {
-            padding: 5px 6px;
-            gap: 4px;
+        /* ======================================================== */
+        /* RESPONSIVIDADE MOBILE REFINADA (SMARTPHONES E TABLETS)   */
+        /* ======================================================== */
+        @media (max-width: 768px) {
+          .top-header-bar {
+            padding: max(8px, var(--sat)) 12px 8px;
           }
+
+          .brand-section {
+            gap: 8px;
+          }
+
+          .brand-logo-img {
+            width: 36px;
+            height: 36px;
+          }
+
+          .brand-title {
+            font-size: 1.05rem;
+          }
+
+          .brand-subtitle {
+            font-size: 0.58rem;
+            letter-spacing: 0.04em;
+          }
+
+          .top-header-right-actions {
+            gap: 6px;
+          }
+
+          .top-settings-btn {
+            padding: 8px;
+            min-width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            justify-content: center;
+          }
+
+          .top-settings-label {
+            display: none;
+          }
+
+          .top-user-profile-badge {
+            padding: 2px;
+            gap: 4px;
+            background: transparent;
+            border-color: transparent;
+          }
+
+          .top-user-info {
+            display: none;
+          }
+
+          .top-user-avatar {
+            width: 34px;
+            height: 34px;
+          }
+
+          .top-logout-btn {
+            padding: 6px;
+            min-width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            justify-content: center;
+          }
+
+          .top-logout-text {
+            display: none;
+          }
+
+          /* Notificações no Mobile: Popover em Largura Total Adaptável */
+          .notif-dropdown-popover {
+            position: fixed;
+            top: calc(52px + var(--sat));
+            left: 10px;
+            right: 10px;
+            width: auto;
+            max-width: none;
+            max-height: calc(100dvh - 75px - var(--sat));
+            border-radius: 16px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+          }
+
+          .notif-list-body {
+            max-height: calc(100dvh - 180px);
+          }
+
+          /* Bottom Navigation Bar Mobile Nativa */
+          .apple-glass-dock-wrapper {
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            max-width: 100vw;
+            transform: none;
+            padding: 4px 6px max(10px, var(--sab)) 6px;
+            border-radius: 20px 20px 0 0;
+            background: rgba(6, 10, 20, 0.88);
+            backdrop-filter: blur(32px) saturate(210%);
+            -webkit-backdrop-filter: blur(32px) saturate(210%);
+            border-top: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 -10px 32px rgba(0, 0, 0, 0.6);
+            animation: none;
+          }
+
+          .apple-glass-dock {
+            width: 100%;
+            justify-content: space-around;
+            padding: 2px;
+            gap: 2px;
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            border-radius: 0;
+          }
+
+          .apple-glass-dock::before {
+            display: none;
+          }
+
           .apple-dock-item {
-            padding: 8px 12px;
-            gap: 0;
+            flex: 1;
+            padding: 5px 2px;
+            flex-direction: column;
+            gap: 2px;
+            justify-content: center;
+            align-items: center;
+            border-radius: 10px;
+            min-height: 48px;
+          }
+
+          .apple-dock-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+
+          .apple-dock-icon svg {
+            width: 19px;
+            height: 19px;
+          }
+
+          .apple-dock-label {
+            display: block;
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            max-width: 48px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-align: center;
+          }
+
+          .apple-dock-dot {
+            bottom: 1px;
+            width: 3px;
+            height: 3px;
+          }
+
+          .apple-dock-divider,
+          .apple-dock-minimize-btn {
+            display: none;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .brand-subtitle {
+            display: none;
           }
           .apple-dock-label {
-            display: none;
+            font-size: 0.58rem;
+            max-width: 42px;
           }
         }
       `}</style>

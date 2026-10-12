@@ -2238,6 +2238,67 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           color: #94A3B8;
           line-height: 1.4;
         }
+
+        /* ======================================================== */
+        /* RESPONSIVIDADE MOBILE REFINADA (PERFIL DO JOGADOR)       */
+        /* ======================================================== */
+        @media (max-width: 640px) {
+          .profile-page-container {
+            padding: 10px 10px 28px;
+            gap: 14px;
+          }
+
+          .profile-hero-banner {
+            padding: 16px 14px;
+            border-radius: 16px;
+          }
+
+          .hero-banner-content {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 12px;
+          }
+
+          .hero-avatar-wrapper {
+            width: 76px;
+            height: 76px;
+          }
+
+          .hero-identity-text {
+            min-width: 100%;
+            align-items: center;
+          }
+
+          .hero-name-title {
+            font-size: 1.35rem;
+          }
+
+          .hero-badges-row {
+            justify-content: center;
+          }
+
+          .hero-quick-actions {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+          }
+
+          .btn-outline-back,
+          .btn-primary-hero-save {
+            width: 100%;
+            justify-content: center;
+            padding: 10px 8px;
+            font-size: 0.8rem;
+          }
+
+          .profile-card-section {
+            padding: 16px 14px;
+            border-radius: 14px;
+            gap: 14px;
+          }
+        }
       `}</style>
     </div>
   );
