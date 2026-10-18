@@ -9,6 +9,7 @@ import { TeamSettings } from './components/Settings/TeamSettings';
 import { AcceptInviteModal } from './components/Invites/AcceptInviteModal';
 import { LoginPage } from './components/Auth/LoginPage';
 import { ProfilePage } from './components/Profile/ProfilePage';
+import { PlayerStatsView } from './components/Stats/PlayerStatsView';
 import { ToastContainer } from './components/UI/Toast';
 import { showToast } from './components/UI/toastService';
 import { ShieldCheck } from 'lucide-react';
@@ -49,6 +50,7 @@ export function App() {
   });
   const [currentRole, setCurrentRole] = useState<Role>(currentUser?.role || 'Dono');
   const [teamName] = useState<string>('Friba Esports');
+  const [selectedStatsPlayerId, setSelectedStatsPlayerId] = useState<string>('');
 
   // Limpar dados mockados antigos do cache
   useEffect(() => {
@@ -341,6 +343,24 @@ export function App() {
               onUpdateMember={handleUpdateMember}
               onDeleteMember={handleDeleteMember}
               onRefreshMembers={refreshMembers}
+              onViewStats={(memberId) => {
+                setSelectedStatsPlayerId(memberId);
+                setActiveTab('stats');
+              }}
+            />
+          )}
+
+          {activeTab === 'stats' && (
+            <PlayerStatsView
+              currentRole={currentRole}
+              currentUser={currentUser}
+              members={members}
+              scrims={scrims}
+              onAddScrim={handleAddScrim}
+              onUpdateScrim={handleUpdateScrim}
+              onNavigate={setActiveTab}
+              teamName={teamName}
+              initialSelectedMemberId={selectedStatsPlayerId}
             />
           )}
 

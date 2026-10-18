@@ -13,7 +13,8 @@ import {
   Send,
   Sparkles,
   RefreshCw,
-  Mail
+  Mail,
+  BarChart3
 } from 'lucide-react';
 import type { Role, TeamMember, Lane, PokemonRole, AppUser } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
@@ -29,6 +30,7 @@ interface RosterManagementProps {
   onUpdateMember: (member: TeamMember) => void;
   onDeleteMember: (id: string) => void;
   onRefreshMembers?: () => Promise<void>;
+  onViewStats?: (memberId: string) => void;
 }
 
 export const RosterManagement: React.FC<RosterManagementProps> = ({
@@ -39,6 +41,7 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
   onUpdateMember,
   onDeleteMember: _onDeleteMember,
   onRefreshMembers,
+  onViewStats,
 }) => {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -413,6 +416,16 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                     <span className="info-label">ID no jogo:</span>
                     <span className="info-value id-code">{member.inGameId || '-'}</span>
                   </div>
+                  {onViewStats && (
+                    <button
+                      type="button"
+                      className="card-stats-quick-btn"
+                      onClick={() => onViewStats(member.id)}
+                    >
+                      <BarChart3 size={13} />
+                      <span>Ver Estatísticas</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -516,6 +529,16 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
                       <span className="info-value id-code">{member.inGameId}</span>
                     </div>
                   ) : null}
+                  {onViewStats && (
+                    <button
+                      type="button"
+                      className="card-stats-quick-btn"
+                      onClick={() => onViewStats(member.id)}
+                    >
+                      <BarChart3 size={13} />
+                      <span>Ver Estatísticas</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -1572,6 +1595,31 @@ export const RosterManagement: React.FC<RosterManagementProps> = ({
           .form-row-3 {
             grid-template-columns: 1fr;
           }
+        }
+
+        .card-stats-quick-btn {
+          margin-top: 10px;
+          width: 100%;
+          background: rgba(244, 63, 94, 0.08);
+          border: 1px solid rgba(244, 63, 94, 0.25);
+          color: #FFF;
+          font-size: 0.76rem;
+          font-weight: 700;
+          padding: 6px 12px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .card-stats-quick-btn:hover {
+          background: #F43F5E;
+          border-color: #F43F5E;
+          box-shadow: 0 0 12px rgba(244, 63, 94, 0.4);
+          transform: translateY(-1px);
         }
       `}</style>
     </div>

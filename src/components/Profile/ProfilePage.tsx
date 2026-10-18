@@ -16,7 +16,8 @@ import {
   ShieldCheck, 
   Sparkles,
   ChevronDown,
-  Info
+  Info,
+  BarChart3
 } from 'lucide-react';
 import type { AppUser, TeamMember, PokemonRole, Lane } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
@@ -379,13 +380,22 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
           <div className="hero-quick-actions">
             {onNavigate && (
-              <button 
-                type="button" 
-                className="btn-outline-back" 
-                onClick={() => onNavigate('roster')}
-              >
-                Ver na Aba Equipe
-              </button>
+              <>
+                <button 
+                  type="button" 
+                  className="btn-outline-back" 
+                  onClick={() => onNavigate('stats')}
+                >
+                  <BarChart3 size={14} /> Minhas Estatísticas
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-outline-back" 
+                  onClick={() => onNavigate('roster')}
+                >
+                  Ver na Aba Equipe
+                </button>
+              </>
             )}
             <button 
               type="button" 
