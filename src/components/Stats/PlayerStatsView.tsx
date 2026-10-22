@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Trophy, 
   Swords, 
@@ -35,7 +35,7 @@ interface PlayerStatsViewProps {
 }
 
 export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
-  currentRole: _currentRole,
+  currentRole,
   currentUser,
   members,
   scrims,
@@ -79,6 +79,23 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
   const [isPlayerDropdownOpen, setIsPlayerDropdownOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('Todos');
   const [timelineMetric, setTimelineMetric] = useState<'points' | 'kos' | 'damage'>('points');
+
+  // Ref e handler para fechar dropdown ao clicar fora
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsPlayerDropdownOpen(false);
+      }
+    };
+    if (isPlayerDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isPlayerDropdownOpen]);
 
   // Modal para inspecionar uma partida específica clicando nos últimos jogos
   const [inspectedScrim, setInspectedScrim] = useState<ScrimEvent | null>(null);
@@ -136,13 +153,15 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
 
         {/* Seletor Customizado de Jogador da Friba */}
         <div className="stats-controls-row">
-          <div className="player-selector-dropdown-wrapper">
+          <div className="player-selector-dropdown-wrapper" ref={dropdownRef}>
             <label className="stats-control-label">Selecionar Jogador:</label>
             <div className="custom-player-select">
               <button
                 type="button"
                 className={`player-select-btn ${isPlayerDropdownOpen ? 'open' : ''}`}
                 onClick={() => setIsPlayerDropdownOpen(!isPlayerDropdownOpen)}
+                aria-haspopup="listbox"
+                aria-expanded={isPlayerDropdownOpen}
               >
                 <div className="player-select-btn-inner">
                   <img
@@ -159,7 +178,7 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
               </button>
 
               {isPlayerDropdownOpen && (
-                <div className="player-dropdown-menu glass-panel">
+                <div className="player-dropdown-menu" role="listbox">
                   <div className="player-dropdown-header">Atletas do Elenco ({members.length})</div>
                   <div className="player-dropdown-list">
                     {members.map(member => {
@@ -738,11 +757,12 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
       {/* Modal de Detalhes da Partida ao Clicar em "Ver Jogo" */}
       {inspectedScrim && (
         <MatchStatsModal
+          key={inspectedScrim.id}
           isOpen={Boolean(inspectedScrim)}
           onClose={() => setInspectedScrim(null)}
           scrim={inspectedScrim}
           teamName={teamName}
-          canEdit={false}
+          canEdit={currentRole === 'Dono' || currentRole === 'Coach' || currentRole === 'Manager'}
           onSaveStats={(updated) => {
             onUpdateScrim(updated);
             setInspectedScrim(null);
@@ -772,6 +792,8 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
 
         /* Top Bar */
         .stats-top-bar {
+          position: relative;
+          z-index: 50;
           padding: 18px 24px;
           border-radius: 16px;
           display: flex;
@@ -819,6 +841,8 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
         }
 
         .stats-controls-row {
+          position: relative;
+          z-index: 55;
           display: flex;
           align-items: center;
           gap: 20px;
@@ -838,11 +862,12 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
         /* Player Dropdown */
         .player-selector-dropdown-wrapper {
           position: relative;
+          z-index: 60;
         }
 
         .custom-player-select {
           position: relative;
-          min-width: 250px;
+          min-width: 260px;
         }
 
         .player-select-btn {
@@ -851,19 +876,19 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
           align-items: center;
           justify-content: space-between;
           gap: 12px;
-          background: rgba(30, 41, 59, 0.85);
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          padding: 7px 14px;
+          background: #0D1629;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          padding: 8px 14px;
           border-radius: 12px;
           color: #FFF;
           cursor: pointer;
-          transition: all 0.2s ease;
+          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .player-select-btn:hover, .player-select-btn.open {
           border-color: #F43F5E;
-          background: rgba(30, 41, 59, 1);
-          box-shadow: 0 0 12px rgba(244, 63, 94, 0.25);
+          background: #131E35;
+          box-shadow: 0 0 16px rgba(244, 63, 94, 0.3);
         }
 
         .player-select-btn-inner {
@@ -907,25 +932,67 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
           position: absolute;
           top: calc(100% + 8px);
           left: 0;
-          right: 0;
-          z-index: 99;
-          background: #0F172A;
-          border: 1px solid rgba(255, 255, 255, 0.12);
+          width: 100%;
+          min-width: 270px;
+          z-index: 99999;
+          background: #090E1A !important;
+          border: 1px solid rgba(255, 255, 255, 0.16) !important;
           border-radius: 14px;
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
           overflow: hidden;
-          max-height: 320px;
+          max-height: 340px;
           overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          animation: dropdownSlideDown 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes dropdownSlideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-6px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .player-dropdown-menu::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .player-dropdown-menu::-webkit-scrollbar-track {
+          background: #060A13;
+        }
+
+        .player-dropdown-menu::-webkit-scrollbar-thumb {
+          background: #1E293B;
+          border-radius: 4px;
+        }
+
+        .player-dropdown-menu::-webkit-scrollbar-thumb:hover {
+          background: #F43F5E;
         }
 
         .player-dropdown-header {
           padding: 10px 14px;
           font-size: 0.72rem;
           font-weight: 800;
-          color: #64748B;
+          color: #94A3B8;
           text-transform: uppercase;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-          background: rgba(15, 23, 42, 0.9);
+          letter-spacing: 0.05em;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          background: #060A13;
+          position: sticky;
+          top: 0;
+          z-index: 2;
+        }
+
+        .player-dropdown-list {
+          display: flex;
+          flex-direction: column;
+          background: #090E1A;
         }
 
         .player-dropdown-item {
@@ -934,16 +1001,22 @@ export const PlayerStatsView: React.FC<PlayerStatsViewProps> = ({
           align-items: center;
           gap: 12px;
           cursor: pointer;
+          background: #090E1A;
           transition: background 0.15s ease;
           border-bottom: 1px solid rgba(255, 255, 255, 0.04);
         }
 
+        .player-dropdown-item:last-child {
+          border-bottom: none;
+        }
+
         .player-dropdown-item:hover {
-          background: rgba(244, 63, 94, 0.1);
+          background: rgba(244, 63, 94, 0.14);
         }
 
         .player-dropdown-item.selected {
-          background: rgba(244, 63, 94, 0.18);
+          background: rgba(244, 63, 94, 0.22);
+          border-left: 3px solid #F43F5E;
         }
 
         .dropdown-item-avatar {
