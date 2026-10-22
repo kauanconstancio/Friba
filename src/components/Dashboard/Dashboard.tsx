@@ -66,15 +66,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const starters = members.filter(m => m.role === 'Jogador' && m.status === 'Titular');
   const staff = members.filter(m => m.role !== 'Jogador');
 
-  // Filtragem de eventos futuros (Agendado ou Confirmado)
-  const upcomingEvents = scrims
+  // Filtragem e ordenação cronológica dos eventos futuros (Agendado ou Confirmado)
+  const allUpcomingEvents = scrims
     .filter(s => s.status === 'Agendado' || s.status === 'Confirmado')
     .filter(s => {
       if (eventFilter === 'TODOS') return true;
       if (eventFilter === 'TREINOS') return s.category === 'Treino' || s.opponentTeam.toLowerCase().includes('treino');
       if (eventFilter === 'AMISTOSOS') return s.category === 'Amistoso' || !s.opponentTeam.toLowerCase().includes('treino');
       return true;
+    })
+    .sort((a, b) => {
+      const dateA = a.date || '';
+      const dateB = b.date || '';
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      return (a.time || '').localeCompare(b.time || '');
     });
+
+  // Exibe somente os 10 próximos eventos no card
+  const upcomingEvents = allUpcomingEvents.slice(0, 10);
 
   const handleSaveEvent = (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,6 +255,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="card-title-group">
               <Calendar size={22} className="card-icon-calendar" />
               <h2 className="friba-card-title">Próximos Eventos</h2>
+              {allUpcomingEvents.length > 0 && (
+                <span className="events-count-badge">
+                  {upcomingEvents.length}{allUpcomingEvents.length > 10 ? ` de ${allUpcomingEvents.length}` : ''}
+                </span>
+              )}
             </div>
 
             <div className="card-header-actions">
@@ -320,6 +334,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {allUpcomingEvents.length > 10 && (
+              <div className="events-card-footer">
+                <span className="events-count-hint">
+                  Exibindo os 10 mais próximos ({allUpcomingEvents.length - 10} adicionais na agenda)
+                </span>
+                <button 
+                  type="button" 
+                  className="events-view-all-btn"
+                  onClick={() => onNavigate('agenda')}
+                >
+                  Ver todos na Agenda ({allUpcomingEvents.length}) →
+                </button>
               </div>
             )}
           </div>
@@ -932,6 +961,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
         .status-pill.confirmado { background: rgba(11, 95, 255, 0.15); color: #60A5FA; border: 1px solid rgba(11, 95, 255, 0.3); }
         .status-pill.agendado { background: rgba(245, 158, 11, 0.15); color: #FCD34D; border: 1px solid rgba(245, 158, 11, 0.3); }
         .status-pill.concluído { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+        .events-count-badge {
+          font-size: 0.72rem;
+          font-weight: 800;
+          color: #60A5FA;
+          background: rgba(11, 95, 255, 0.15);
+          border: 1px solid rgba(11, 95, 255, 0.3);
+          padding: 2px 8px;
+          border-radius: 9999px;
+        }
+
+        .events-card-footer {
+          margin-top: 14px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .events-count-hint {
+          font-size: 0.74rem;
+          color: var(--text-muted);
+          font-weight: 500;
+        }
+
+        .events-view-all-btn {
+          background: rgba(11, 95, 255, 0.12);
+          border: 1px solid rgba(11, 95, 255, 0.3);
+          color: #60A5FA;
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 0.74rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: var(--transition);
+        }
+
+        .events-view-all-btn:hover {
+          background: var(--friba-blue);
+          color: #FFFFFF;
+          border-color: #60A5FA;
+        }
 
         /* ======================================================== */
         /* RESPONSIVIDADE MOBILE REFINADA (DASHBOARD)               */
