@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Navigation/Sidebar';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { RosterManagement } from './components/Roster/RosterManagement';
 import { DraftSimulator } from './components/Draft/DraftSimulator';
@@ -57,6 +57,19 @@ export function App() {
   const [currentRole, setCurrentRole] = useState<Role>(currentUser?.role || 'Dono');
   const [teamName] = useState<string>('Friba Esports');
   const [selectedStatsPlayerId, setSelectedStatsPlayerId] = useState<string>('');
+  
+  // Estado de recolhimento da sidebar com persistência local
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('friba_sidebar_collapsed') === 'true';
+  });
+
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('friba_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   // Limpar dados mockados antigos do cache
   useEffect(() => {
@@ -326,7 +339,7 @@ export function App() {
       {/* Camada de difração de luz acelerada por hardware no background */}
       <div className="app-ambient-background" />
 
-      <Navbar
+      <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         currentRole={currentRole}
@@ -341,9 +354,12 @@ export function App() {
           setInviteCodeFromUrl('');
           setIsInviteModalOpen(true);
         }}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={handleToggleSidebar}
       />
 
-      <main className="app-main-content">
+      <div className={`app-main-layout ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+        <main className="app-main-content">
         <div key={activeTab} className="screen-fade-in">
           {activeTab === 'dashboard' && (
             <Dashboard
@@ -464,14 +480,6 @@ export function App() {
         </div>
       </main>
 
-      {/* Modal de Aceite de Convite e Cadastro Oficial do Jogador */}
-      <AcceptInviteModal
-        isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
-        initialCode={inviteCodeFromUrl}
-        onSuccess={handleInviteSuccess}
-      />
-
       <footer className="app-footer">
         <div className="footer-content">
           <div className="footer-left">
@@ -487,27 +495,61 @@ export function App() {
           </div>
         </div>
       </footer>
+    </div>
 
-      <style>{`
+    {/* Modal de Aceite de Convite e Cadastro Oficial do Jogador */}
+    <AcceptInviteModal
+      isOpen={isInviteModalOpen}
+      onClose={() => setIsInviteModalOpen(false)}
+      initialCode={inviteCodeFromUrl}
+      onSuccess={handleInviteSuccess}
+    />
+
+    <style>{`
+      .app-root {
+        min-height: 100vh;
+        display: flex;
+        background-color: var(--bg-deep);
+      }
+
+      .app-main-layout {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        margin-left: 260px;
+        transition: margin-left 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        position: relative;
+        z-index: 1;
+      }
+
+      .app-main-layout.sidebar-collapsed {
+        margin-left: 80px;
+      }
+
+      .app-main-content {
+        flex: 1;
+        padding-bottom: 32px;
+      }
+
+      @media (max-width: 960px) {
         .app-root {
-          min-height: 100vh;
-          display: flex;
           flex-direction: column;
         }
 
-        .app-main-content {
-          flex: 1;
-          padding-bottom: 110px;
+        .app-main-layout {
+          margin-left: 0 !important;
         }
 
-        @media (max-width: 768px) {
-          .app-main-content {
-            padding-bottom: calc(75px + var(--sab, 12px));
-          }
-          .app-footer {
-            display: none !important;
-          }
+        .app-main-content {
+          padding-bottom: 24px;
         }
+
+        .app-footer {
+          display: none !important;
+        }
+      }
 
         .app-footer {
           margin-top: auto;
