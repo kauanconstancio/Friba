@@ -372,44 +372,111 @@ export const dbCreateOrUpdateUser = async (user: AppUser): Promise<AppUser> => {
 };
 
 export const dbUpdateUserRole = async (userId: string, newRole: Role): Promise<void> => {
+  let targetEmail: string | undefined;
+
+  try {
+    const users = await dbFetchUsers();
+    const targetUser = users.find(u => u.id === userId);
+    targetEmail = targetUser?.email?.trim().toLowerCase();
+    const updated = users.map(u => u.id === userId ? { ...u, role: newRole, isOwner: newRole === 'Dono' } : u);
+    localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(updated));
+
+    const members = await dbFetchMembers();
+    const updatedMembers = members.map(m => {
+      const isMatch = m.userId === userId || m.id === userId || (targetEmail && m.email && m.email.trim().toLowerCase() === targetEmail);
+      return isMatch ? { ...m, role: newRole } : m;
+    });
+    localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify(updatedMembers));
+  } catch (err) {
+    console.warn('Erro ao atualizar cargo no cache local:', err);
+  }
+
   const client = getSupabaseClient();
   if (client && isSupabaseConfigured()) {
     try {
+      if (!targetEmail) {
+        const { data: uData } = await client.from('users').select('email').eq('id', userId).maybeSingle();
+        if (uData?.email) {
+          targetEmail = uData.email.trim().toLowerCase();
+        }
+      }
+
       await client
         .from('users')
         .update({ role: newRole, is_owner: newRole === 'Dono' })
         .eq('id', userId);
 
-      // Também sincroniza na tabela de membros se o usuário estiver lá
       await client
         .from('team_members')
         .update({ role: newRole })
         .eq('user_id', userId);
 
-      return;
+      await client
+        .from('team_members')
+        .update({ role: newRole })
+        .eq('id', userId);
+
+      if (targetEmail) {
+        await client
+          .from('team_members')
+          .update({ role: newRole })
+          .ilike('email', targetEmail);
+      }
     } catch (err) {
       console.warn('Erro ao atualizar cargo no Supabase:', err);
     }
   }
-
-  const users = await dbFetchUsers();
-  const updated = users.map(u => u.id === userId ? { ...u, role: newRole, isOwner: newRole === 'Dono' } : u);
-  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(updated));
 };
 
 export const dbDeleteUser = async (userId: string): Promise<void> => {
+  let targetEmail: string | undefined;
+
+  // 1. Obter e-mail e atualizar cache local de users
+  try {
+    const users = await dbFetchUsers();
+    const targetUser = users.find(u => u.id === userId);
+    if (targetUser?.email) {
+      targetEmail = targetUser.email.trim().toLowerCase();
+    }
+    localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users.filter(u => u.id !== userId)));
+  } catch (err) {
+    console.warn('Erro ao atualizar cache local de usuários:', err);
+  }
+
+  // 2. Atualizar cache local de team_members
+  try {
+    const localMembers = await dbFetchMembers();
+    const updatedLocalMembers = localMembers.filter(m => 
+      m.id !== userId && 
+      m.userId !== userId && 
+      (!targetEmail || !m.email || m.email.trim().toLowerCase() !== targetEmail)
+    );
+    localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify(updatedLocalMembers));
+  } catch (err) {
+    console.warn('Erro ao atualizar cache local de membros:', err);
+  }
+
+  // 3. Remover do Supabase em ambas as tabelas: users e team_members
   const client = getSupabaseClient();
   if (client && isSupabaseConfigured()) {
     try {
+      if (!targetEmail) {
+        const { data: uData } = await client.from('users').select('email').eq('id', userId).maybeSingle();
+        if (uData?.email) {
+          targetEmail = uData.email.trim().toLowerCase();
+        }
+      }
+
       await client.from('users').delete().eq('id', userId);
-      return;
+      await client.from('team_members').delete().eq('user_id', userId);
+      await client.from('team_members').delete().eq('id', userId);
+      if (targetEmail) {
+        await client.from('team_members').delete().ilike('email', targetEmail);
+      }
     } catch (err) {
-      console.warn('Erro ao deletar usuário no Supabase:', err);
+      console.warn('Erro ao deletar usuário/membro no Supabase:', err);
     }
   }
-
-  const users = await dbFetchUsers();
-  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users.filter(u => u.id !== userId)));
 };
 
 /* ==========================================================
@@ -652,18 +719,46 @@ export const dbSaveMember = async (member: TeamMember): Promise<TeamMember> => {
 };
 
 export const dbDeleteMember = async (id: string): Promise<void> => {
+  let targetEmail: string | undefined;
+  let targetUserId: string | undefined;
+
+  try {
+    const members = await dbFetchMembers();
+    const targetMember = members.find(m => m.id === id);
+    if (targetMember) {
+      targetEmail = targetMember.email?.trim().toLowerCase();
+      targetUserId = targetMember.userId;
+    }
+    localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify(members.filter(m => m.id !== id)));
+
+    if (targetUserId || targetEmail) {
+      const users = await dbFetchUsers();
+      localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users.filter(u => 
+        u.id !== id && 
+        (!targetUserId || u.id !== targetUserId) && 
+        (!targetEmail || u.email.trim().toLowerCase() !== targetEmail)
+      )));
+    }
+  } catch (err) {
+    console.warn('Erro ao remover membro do cache local:', err);
+  }
+
   const client = getSupabaseClient();
   if (client && isSupabaseConfigured()) {
     try {
       await client.from('team_members').delete().eq('id', id);
-      return;
+      if (targetUserId) {
+        await client.from('team_members').delete().eq('user_id', targetUserId);
+        await client.from('users').delete().eq('id', targetUserId);
+      }
+      if (targetEmail) {
+        await client.from('team_members').delete().ilike('email', targetEmail);
+        await client.from('users').delete().ilike('email', targetEmail);
+      }
     } catch (err) {
       console.warn('Erro ao remover membro do Supabase:', err);
     }
   }
-
-  const members = await dbFetchMembers();
-  localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify(members.filter(m => m.id !== id)));
 };
 
 /* ==========================================================
@@ -898,10 +993,23 @@ export const dbFetchScrims = async (): Promise<ScrimEvent[]> => {
       if (!error && data) {
         const mapped: ScrimEvent[] = data.map((item: any) => {
           const rawScore = item.score || {};
-          const games = item.games || rawScore.games || [];
-          const attendance = item.attendance || rawScore.attendance || [];
+          const games = (Array.isArray(item.games) && item.games.length > 0)
+            ? item.games
+            : (Array.isArray(rawScore.games) && rawScore.games.length > 0)
+            ? rawScore.games
+            : [];
+          const attendance = (Array.isArray(item.attendance) && item.attendance.length > 0)
+            ? item.attendance
+            : (Array.isArray(rawScore.attendance) && rawScore.attendance.length > 0)
+            ? rawScore.attendance
+            : [];
           const opponentTeamId = item.opponent_team_id || rawScore.opponentTeamId || item.opponentTeamId || undefined;
-          const opponentPlayers = item.opponent_players || rawScore.opponentPlayers || item.opponentPlayers || [];
+          const opponentPlayers = (Array.isArray(item.opponent_players) && item.opponent_players.length > 0)
+            ? item.opponent_players
+            : (Array.isArray(rawScore.opponentPlayers) && rawScore.opponentPlayers.length > 0)
+            ? rawScore.opponentPlayers
+            : [];
+          const mvpMemberName = item.mvp_member_name || rawScore.mvpMemberName || rawScore.mvp_member_name || item.mvpMemberName || undefined;
 
           return {
             id: item.id,
@@ -926,6 +1034,7 @@ export const dbFetchScrims = async (): Promise<ScrimEvent[]> => {
             games,
             opponentTeamId,
             opponentPlayers,
+            mvpMemberName,
           };
         });
 
@@ -942,17 +1051,29 @@ export const dbFetchScrims = async (): Promise<ScrimEvent[]> => {
 };
 
 export const dbSaveScrim = async (scrim: ScrimEvent): Promise<ScrimEvent> => {
+  // Atualiza cache local imediatamente para consistência de UI instantânea
+  try {
+    const localRaw = localStorage.getItem(LOCAL_SCRIMS_KEY);
+    const localList: ScrimEvent[] = localRaw ? JSON.parse(localRaw) : [];
+    const exists = localList.some(s => s.id === scrim.id);
+    const updatedLocal = exists ? localList.map(s => s.id === scrim.id ? scrim : s) : [scrim, ...localList];
+    localStorage.setItem(LOCAL_SCRIMS_KEY, JSON.stringify(updatedLocal));
+  } catch (err) {
+    console.warn('Erro ao atualizar cache local de scrims:', err);
+  }
+
   const client = getSupabaseClient();
   if (client && isSupabaseConfigured()) {
     try {
-      // Objeto rico embutido no score JSONB para garantir persistência de games e stats na nuvem
+      // Objeto rico embutido no score JSONB para garantir persistência e compatibilidade
       const richScore = {
         us: scrim.score?.us ?? 0,
         them: scrim.score?.them ?? 0,
         games: scrim.games || [],
         attendance: scrim.attendance || [],
         opponentTeamId: scrim.opponentTeamId || null,
-        opponentPlayers: scrim.opponentPlayers || []
+        opponentPlayers: scrim.opponentPlayers || [],
+        mvpMemberName: scrim.mvpMemberName || null
       };
 
       const payload: Record<string, any> = {
@@ -969,6 +1090,10 @@ export const dbSaveScrim = async (scrim: ScrimEvent): Promise<ScrimEvent> => {
         category: scrim.category || 'Treino',
         lineup: scrim.lineup || [],
         score: richScore,
+        games: scrim.games || [],
+        attendance: scrim.attendance || [],
+        opponent_team_id: scrim.opponentTeamId || null,
+        opponent_players: scrim.opponentPlayers || [],
         vod_url: scrim.vodUrl || null,
         notes: scrim.notes || null,
       };
@@ -982,10 +1107,6 @@ export const dbSaveScrim = async (scrim: ScrimEvent): Promise<ScrimEvent> => {
     }
   }
 
-  const scrims = await dbFetchScrims();
-  const exists = scrims.some(s => s.id === scrim.id);
-  const updated = exists ? scrims.map(s => s.id === scrim.id ? scrim : s) : [scrim, ...scrims];
-  localStorage.setItem(LOCAL_SCRIMS_KEY, JSON.stringify(updated));
   return scrim;
 };
 

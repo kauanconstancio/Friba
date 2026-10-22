@@ -103,7 +103,19 @@ export interface PlayerCalculatedStats {
 }
 
 const normalizeStr = (str?: string): string => {
-  return (str || '').trim().toLowerCase();
+  return (str || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+};
+
+const stripPrefix = (str: string): string => {
+  const norm = normalizeStr(str);
+  return norm
+    .replace(/^(@[^\s·]+|[a-z0-9_-]+)\s*[·•-]\s*/i, '')
+    .replace(/^@/, '')
+    .trim();
 };
 
 export const isPlayerMatching = (statPlayerName: string, member: TeamMember): boolean => {
@@ -114,13 +126,23 @@ export const isPlayerMatching = (statPlayerName: string, member: TeamMember): bo
   const ign = normalizeStr(member.inGameId);
   const tag = normalizeStr(member.tag);
 
+  // 1. Match direto normalizado
   if (nick && pName === nick) return true;
   if (name && pName === name) return true;
   if (ign && pName === ign) return true;
-  if (tag && pName.includes(tag)) return true;
+  if (tag && (pName === tag || pName.includes(tag))) return true;
 
-  if (nick && (pName.includes(nick) || nick.includes(pName))) return true;
-  if (name && (pName.includes(name) || name.includes(pName))) return true;
+  // 2. Match sem prefixo de tag (ex: "@FRIBA · KEAN" -> "kean")
+  const strippedPName = stripPrefix(statPlayerName);
+  const strippedNick = stripPrefix(member.nickname || '');
+  const strippedName = stripPrefix(member.name || '');
+
+  if (strippedPName && strippedNick && strippedPName === strippedNick) return true;
+  if (strippedPName && strippedName && strippedPName === strippedName) return true;
+
+  // 3. Substrings mútuas
+  if (strippedNick && (strippedPName.includes(strippedNick) || strippedNick.includes(strippedPName))) return true;
+  if (strippedName && (strippedPName.includes(strippedName) || strippedName.includes(strippedPName))) return true;
 
   return false;
 };
@@ -175,9 +197,18 @@ export function calculatePlayerStats(
   });
 
   for (const scrim of sortedScrims) {
-    // Filtro de categoria (Todos, Treino, Amistoso, Campeonato)
-    if (categoryFilter !== 'Todos' && scrim.category && scrim.category !== categoryFilter) {
-      continue;
+    // Filtro de categoria (Todos, Treino, Amistoso, Campeonato / Torneio)
+    if (categoryFilter !== 'Todos' && scrim.category) {
+      const filterLow = categoryFilter.toLowerCase();
+      const catLow = scrim.category.toLowerCase();
+      const isTournamentFilter = filterLow.includes('campeonato') || filterLow.includes('torneio');
+      const isTournamentCat = catLow.includes('campeonato') || catLow.includes('torneio');
+
+      if (isTournamentFilter && !isTournamentCat) {
+        continue;
+      } else if (!isTournamentFilter && catLow !== filterLow) {
+        continue;
+      }
     }
 
     const games: ScrimGameDetail[] = scrim.games || [];

@@ -349,7 +349,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
   // Salvar novo evento
   const handleSaveAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    const finalTitle = formData.title || (formData.category === 'Amistoso' ? `Scrim vs ${formData.opponentTeam || 'Adversário'}` : formData.category === 'Treino' ? 'Treino Tático' : 'Compromisso Friba');
+    const finalTitle = formData.title || (formData.category === 'Amistoso' ? `Scrim vs ${formData.opponentTeam || 'Adversário'}` : formData.category === 'Campeonato' ? `Torneio vs ${formData.opponentTeam || 'Adversário'}` : formData.category === 'Treino' ? 'Treino Tático' : 'Compromisso Friba');
     
     // Lista inicial de presença com status 'Pendente' para os atletas escalados
     const initialAttendance: ScrimAttendance[] = (formData.lineup || []).map(playerName => {
@@ -1107,9 +1107,9 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                     onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
                   >
                     <option value="Amistoso">Amistoso (Scrim)</option>
+                    <option value="Campeonato">Torneio / Campeonato Oficial</option>
                     <option value="Treino">Treino Tático</option>
                     <option value="Review">VOD Review</option>
-                    <option value="Campeonato">Campeonato Oficial</option>
                   </select>
                 </div>
 
@@ -1117,14 +1117,14 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
                   <label>Título ou Descrição Curta</label>
                   <input
                     type="text"
-                    placeholder="Ex: Scrim vs LOUD, Treino de Rotações..."
+                    placeholder="Ex: Scrim vs LOUD, Torneio Regional..."
                     value={formData.title || ''}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   />
                 </div>
               </div>
 
-              {formData.category === 'Amistoso' && (
+              {(formData.category === 'Amistoso' || formData.category === 'Campeonato') && (
                 <div className="opponent-selection-box" style={{
                   background: 'rgba(15, 23, 42, 0.6)',
                   border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -1417,6 +1417,7 @@ export const ScrimAgenda: React.FC<ScrimAgendaProps> = ({
       {/* MODAL UNIFICADO: RELATÓRIO, ESTATÍSTICAS POR JOGADOR & RESULTADO AUTOMÁTICO */}
       {isMatchStatsModalOpen && statsModalScrim && (
         <MatchStatsModal
+          key={statsModalScrim.id}
           isOpen={isMatchStatsModalOpen}
           onClose={() => {
             setIsMatchStatsModalOpen(false);

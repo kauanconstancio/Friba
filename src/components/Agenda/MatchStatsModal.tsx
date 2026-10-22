@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { ScrimEvent, ScrimGameDetail, GamePlayerStats, TeamMember } from '../../types';
 import { POKEMON_ROSTER } from '../../data/pokemonData';
+import { showToast } from '../UI/toastService';
 
 interface MatchStatsModalProps {
   isOpen: boolean;
@@ -178,10 +179,10 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
     return list;
   });
 
-  // Sincronizar dados internos caso a scrim selecionada mude
-  const [prevScrimId, setPrevScrimId] = useState(scrim.id);
-  if (scrim.id !== prevScrimId) {
-    setPrevScrimId(scrim.id);
+  // Sincronizar dados internos caso a scrim prop seja atualizada
+  const [prevScrim, setPrevScrim] = useState(scrim);
+  if (scrim !== prevScrim) {
+    setPrevScrim(scrim);
     setVodUrl(scrim.vodUrl || '');
     setResultNotes(scrim.notes || '');
     setSelectedMvp(scrim.mvpMemberName || '');
@@ -336,7 +337,7 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
 
     const updatedScrim: ScrimEvent = {
       ...scrim,
-      status: hasAnyGamePlayed ? 'Concluído' : scrim.status,
+      status: 'Concluído',
       games: finalizedGames,
       score: { us: seriesUsWins, them: seriesThemWins },
       vodUrl: vodUrl.trim() || undefined,
@@ -347,6 +348,7 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
     if (onSaveStats) {
       onSaveStats(updatedScrim);
     }
+    showToast('Resultado e estatísticas da partida salvos com sucesso!', 'success');
     onClose();
   };
 
@@ -527,9 +529,49 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
                             />
                           </button>
                           <div className="player-tag-name">
-                            <span className="player-full-label">
-                              <span className="tag-prefix">{p.playerTag || (teamName ? teamName.split(' ')[0].toUpperCase() : 'FRIBA')} ·</span> {getPlayerNick(p.playerName)}
-                            </span>
+                            {isEditing && members && members.length > 0 ? (
+                              <select
+                                className="player-select-inline"
+                                value={members.find(m => m.nickname === p.playerName || m.name === p.playerName)?.id || ''}
+                                onChange={(e) => {
+                                  const selMember = members.find(m => m.id === e.target.value);
+                                  if (selMember) {
+                                    const newName = selMember.nickname || selMember.name;
+                                    handleUpdatePlayerStat('us', idx, 'playerName', newName);
+                                    if ((!p.pokemonId || !p.pokemonName) && selMember.mainPokemon?.[0]) {
+                                      const defaultPoke = POKEMON_ROSTER.find(pk => pk.id.toLowerCase() === selMember.mainPokemon![0].toLowerCase());
+                                      if (defaultPoke) {
+                                        setGamesList(prev => {
+                                          const copy = [...prev];
+                                          const g = { ...copy[activeGameIdx] };
+                                          const stats = [...(g.usPlayersStats || [])];
+                                          stats[idx] = {
+                                            ...stats[idx],
+                                            pokemonId: defaultPoke.id,
+                                            pokemonName: defaultPoke.name,
+                                            pokemonSprite: defaultPoke.sprite,
+                                          };
+                                          g.usPlayersStats = stats;
+                                          copy[activeGameIdx] = g;
+                                          return copy;
+                                        });
+                                      }
+                                    }
+                                  }
+                                }}
+                              >
+                                <option value="">{getPlayerNick(p.playerName) || `Atleta ${idx + 1}`}</option>
+                                {members.map(m => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.nickname ? `${m.nickname} (${m.name})` : m.name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="player-full-label">
+                                <span className="tag-prefix">{p.playerTag || (teamName ? teamName.split(' ')[0].toUpperCase() : 'FRIBA')} ·</span> {getPlayerNick(p.playerName)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -1615,6 +1657,25 @@ export const MatchStatsModal: React.FC<MatchStatsModalProps> = ({
           border: 1px solid rgba(255, 255, 255, 0.15);
           color: #FFFFFF;
           border-radius: 6px;
+        }
+
+        .player-select-inline {
+          height: 28px;
+          font-size: 0.82rem;
+          font-weight: 600;
+          padding: 2px 8px;
+          max-width: 150px;
+          background: rgba(15, 23, 42, 0.9);
+          border: 1px solid rgba(56, 189, 248, 0.4);
+          color: #38BDF8;
+          border-radius: 6px;
+          outline: none;
+          cursor: pointer;
+        }
+
+        .player-select-inline option {
+          background: #0B111E;
+          color: #F8FAFC;
         }
 
         /* VALORES ESTATÍSTICOS COLORIDOS */
