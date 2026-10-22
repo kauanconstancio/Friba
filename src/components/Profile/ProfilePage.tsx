@@ -213,6 +213,25 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [specialtyOrTitle, setSpecialtyOrTitle] = useState(linkedMember?.specialtyOrTitle || (currentUser.role === 'Dono' ? 'Dono & Fundador' : ''));
   const [coachNotes, setCoachNotes] = useState(linkedMember?.coachNotes || '');
 
+  // Sincronizar estados com currentUser e linkedMember caso o usuário selecionado mude
+  const [prevUserId, setPrevUserId] = useState(currentUser.id);
+  if (currentUser.id !== prevUserId) {
+    setPrevUserId(currentUser.id);
+    setName(currentUser.name || linkedMember?.name || '');
+    setNickname(currentUser.nickname || linkedMember?.nickname || '');
+    setAvatar(currentUser.avatar || linkedMember?.avatar || AVATAR_PRESETS[0].url);
+    setDiscord(currentUser.discord || linkedMember?.discord || '');
+    setInGameId(currentUser.inGameId || linkedMember?.inGameId || '');
+    if (linkedMember?.gameRole) setGameRole(linkedMember.gameRole);
+    if (linkedMember?.preferredLane) setPreferredLane(linkedMember.preferredLane);
+    if (linkedMember?.status) setStatus(linkedMember.status);
+    if (linkedMember?.mainPokemon && linkedMember.mainPokemon.length > 0) {
+      setMainPokemon(linkedMember.mainPokemon);
+    }
+    if (linkedMember?.specialtyOrTitle) setSpecialtyOrTitle(linkedMember.specialtyOrTitle);
+    if (linkedMember?.coachNotes) setCoachNotes(linkedMember.coachNotes);
+  }
+
   // Filtros da seção de Pokémon
   const [pokemonSearch, setPokemonSearch] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('Todos');

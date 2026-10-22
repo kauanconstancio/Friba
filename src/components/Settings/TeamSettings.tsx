@@ -31,12 +31,18 @@ interface TeamSettingsProps {
   currentUser: AppUser;
   onRoleChanged?: (newRole: Role) => void;
   teamName: string;
+  onMemberDeleted?: (userId: string) => void;
+  onRoleUpdated?: (userId: string, newRole: Role) => void;
+  onRefreshMembers?: () => Promise<void>;
 }
 
 export const TeamSettings: React.FC<TeamSettingsProps> = ({
   currentRole,
   currentUser,
   teamName,
+  onMemberDeleted,
+  onRoleUpdated,
+  onRefreshMembers,
 }) => {
   const isOwner = currentRole === 'Dono' || currentUser.role === 'Dono';
 
@@ -138,6 +144,12 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
     try {
       await dbUpdateUserRole(userId, newRole);
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole, isOwner: newRole === 'Dono' } : u));
+      if (onRoleUpdated) {
+        onRoleUpdated(userId, newRole);
+      }
+      if (onRefreshMembers) {
+        await onRefreshMembers();
+      }
       showToast('Cargo atualizado com sucesso!', 'success');
     } catch (err) {
       console.error('Erro ao atualizar cargo:', err);
@@ -155,7 +167,13 @@ export const TeamSettings: React.FC<TeamSettingsProps> = ({
     if (window.confirm(`Tem certeza que deseja remover ${userName} da organização?`)) {
       await dbDeleteUser(userId);
       setUsers(prev => prev.filter(u => u.id !== userId));
-      showToast(`Usuário ${userName} removido da organização.`, 'info');
+      if (onMemberDeleted) {
+        onMemberDeleted(userId);
+      }
+      if (onRefreshMembers) {
+        await onRefreshMembers();
+      }
+      showToast(`Usuário ${userName} removido da organização e do elenco.`, 'info');
     }
   };
 

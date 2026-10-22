@@ -112,7 +112,7 @@ export function App() {
   const refreshMembers = useCallback(async () => {
     try {
       const data = await dbFetchMembers();
-      if (data && data.length) {
+      if (data) {
         setMembers(data);
       }
     } catch (err) {
@@ -413,6 +413,13 @@ export function App() {
                 setCurrentRole(newRole);
                 setCurrentUser(prev => prev ? ({ ...prev, role: newRole, isOwner: newRole === 'Dono' }) : null);
               }}
+              onMemberDeleted={(deletedUserId) => {
+                setMembers(prev => prev.filter(m => m.id !== deletedUserId && m.userId !== deletedUserId));
+              }}
+              onRoleUpdated={(userId, newRole) => {
+                setMembers(prev => prev.map(m => (m.userId === userId || m.id === userId) ? { ...m, role: newRole } : m));
+              }}
+              onRefreshMembers={refreshMembers}
             />
           )}
         </div>
