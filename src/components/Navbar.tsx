@@ -16,7 +16,8 @@ import {
   Trophy,
   CheckCheck,
   X,
-  BarChart3
+  BarChart3,
+  Target
 } from 'lucide-react';
 import type { Role, AppUser, ScrimEvent, TeamAnnouncement, TeamMember, TeamNotification } from '../types';
 
@@ -158,6 +159,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'roster', label: 'Equipe', icon: Users },
     { id: 'stats', label: 'Estatísticas', icon: BarChart3 },
+    { id: 'rivals', label: 'Rivais', icon: Target },
     { id: 'draft', label: 'Draft', icon: Swords },
     { id: 'tactical', label: 'Planner', icon: Map },
     { id: 'agenda', label: 'Agenda', icon: Calendar },

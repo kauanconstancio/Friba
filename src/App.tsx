@@ -10,6 +10,7 @@ import { AcceptInviteModal } from './components/Invites/AcceptInviteModal';
 import { LoginPage } from './components/Auth/LoginPage';
 import { ProfilePage } from './components/Profile/ProfilePage';
 import { PlayerStatsView } from './components/Stats/PlayerStatsView';
+import { RivalsHub } from './components/Rivals/RivalsHub';
 import { ToastContainer } from './components/UI/Toast';
 import { showToast } from './components/UI/toastService';
 import { ShieldCheck } from 'lucide-react';
@@ -19,13 +20,15 @@ import type {
   ScrimEvent, 
   StrategyPlan, 
   TeamAnnouncement,
-  AppUser 
+  AppUser,
+  OpponentTeam
 } from './types';
 import { 
   INITIAL_MEMBERS, 
   INITIAL_SCRIMS, 
   INITIAL_PRESETS, 
-  INITIAL_ANNOUNCEMENTS 
+  INITIAL_ANNOUNCEMENTS,
+  INITIAL_OPPONENT_TEAMS
 } from './data/initialData';
 import { 
   authGetSession,
@@ -40,7 +43,10 @@ import {
   dbFetchStrategyPlans,
   dbSaveStrategyPlan,
   dbFetchAnnouncements,
-  dbSaveAnnouncement
+  dbSaveAnnouncement,
+  dbFetchOpponentTeams,
+  dbSaveOpponentTeam,
+  dbDeleteOpponentTeam
 } from './services/supabase';
 
 export function App() {
@@ -86,6 +92,11 @@ export function App() {
     return saved ? JSON.parse(saved) : INITIAL_ANNOUNCEMENTS;
   });
 
+  const [opponentTeams, setOpponentTeams] = useState<OpponentTeam[]>(() => {
+    const saved = localStorage.getItem('friba_opponent_teams_v2');
+    return saved ? JSON.parse(saved) : INITIAL_OPPONENT_TEAMS;
+  });
+
   // Modal de Aceitar Convite / Cadastro de Jogador
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -126,6 +137,7 @@ export function App() {
     dbFetchScrims().then(data => { if (data) setScrims(data); });
     dbFetchStrategyPlans().then(data => { if (data) setPresets(data); });
     dbFetchAnnouncements().then(data => { if (data) setAnnouncements(data); });
+    dbFetchOpponentTeams().then(data => { if (data) setOpponentTeams(data); });
   }, []);
 
   // Sincronizar membros ao focar na janela ou voltar para a aba
@@ -257,6 +269,19 @@ export function App() {
     showToast(`Tática "${newPlan.title}" salva com sucesso!`, 'success');
   };
 
+  const handleSaveOpponentTeam = async (newTeam: OpponentTeam) => {
+    setOpponentTeams(prev => {
+      const exists = prev.some(t => t.id === newTeam.id);
+      return exists ? prev.map(t => t.id === newTeam.id ? newTeam : t) : [newTeam, ...prev];
+    });
+    await dbSaveOpponentTeam(newTeam);
+  };
+
+  const handleDeleteOpponentTeam = async (id: string) => {
+    setOpponentTeams(prev => prev.filter(t => t.id !== id));
+    await dbDeleteOpponentTeam(id);
+  };
+
   // Callback quando o jogador aceita o convite e conclui seu cadastro
   const handleInviteSuccess = (newMember: TeamMember, newUser: AppUser) => {
     setMembers(prev => {
@@ -361,6 +386,20 @@ export function App() {
               onNavigate={setActiveTab}
               teamName={teamName}
               initialSelectedMemberId={selectedStatsPlayerId}
+            />
+          )}
+
+          {activeTab === 'rivals' && (
+            <RivalsHub
+              currentRole={currentRole}
+              currentUser={currentUser}
+              opponentTeams={opponentTeams}
+              scrims={scrims}
+              members={members}
+              onSaveTeam={handleSaveOpponentTeam}
+              onDeleteTeam={handleDeleteOpponentTeam}
+              onNavigate={setActiveTab}
+              teamName={teamName}
             />
           )}
 

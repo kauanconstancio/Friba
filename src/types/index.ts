@@ -136,8 +136,14 @@ export interface OpponentTeam {
   tag: string;
   logo?: string;
   contact?: string;
+  discord?: string;
   players: string[];
   notes?: string;
+  tier?: 'Tier 1' | 'Tier 2' | 'Rival Direto' | 'Treino Frequente' | 'Academia';
+  region?: string;
+  tacticalPlaystyle?: string;
+  priorityBans?: string[];
+  favoriteComps?: string[];
   createdAt?: string;
 }
 

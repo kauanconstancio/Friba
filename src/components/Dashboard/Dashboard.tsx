@@ -11,7 +11,8 @@ import {
   Dumbbell,
   X,
   Check,
-  BarChart3
+  BarChart3,
+  Target
 } from 'lucide-react';
 import type { Role, TeamMember, ScrimEvent, TeamAnnouncement, AppUser } from '../../types';
 
@@ -150,6 +151,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="hero-quick-actions">
           <button className="btn-primary" onClick={() => onNavigate('stats')}>
             <BarChart3 size={15} /> Estatísticas
+          </button>
+          <button className="btn-secondary" onClick={() => onNavigate('rivals')}>
+            <Target size={15} /> Rivais
           </button>
           <button className="btn-secondary" onClick={() => onNavigate('draft')}>
             <Swords size={15} /> Draft
